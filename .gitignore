@@ -13,3 +13,5 @@ veda
 .vscode/
 *.swp
 .DS_Store
+android/
+ios/
