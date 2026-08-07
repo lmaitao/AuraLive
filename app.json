@@ -1,0 +1,91 @@
+{
+  "expo": {
+    "name": "AuraLive",
+    "slug": "auralive",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "auralive",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#020205"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.auralive.app",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio",
+          "fetch",
+          "remote-notification"
+        ],
+        "NSCameraUsageDescription": "Aura Live requiere tu cámara para proteger la plataforma mediante biometría 3D y permitirte hacer directos.",
+        "NSMicrophoneUsageDescription": "Aura Live requiere tu micrófono para que interactúes en las salas de voz y video.",
+        "NSPhotoLibraryUsageDescription": "Permite acceder a tus fotos para cambiar tu avatar de perfil y compartir imágenes."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#020205"
+      },
+      "package": "com.auralive.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.WAKE_LOCK",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.FOREGROUND_SERVICE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Aura Live requiere tu cámara para directos y biometría."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Permite acceder a fotos para avatares.",
+          "savePhotosPermission": "Permite guardar fotos y videos."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Aura Live requiere tu micrófono para salas de voz y directos."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 24,
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34,
+            "buildToolsVersion": "34.0.0"
+          },
+          "ios": {
+            "deploymentTarget": "15.1"
+          }
+        }
+      ]
+    ]
+  }
+}

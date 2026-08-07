@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  aura-live-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aura_live_web_app
+    ports:
+      - "8080:80"
+    environment:
+      - EXPO_PUBLIC_SUPABASE_URL=https://nhehuqgaugbxqcdvxlmp.supabase.co
+      - EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_DyWETVXfAHwtc0-dForQOg_H00hKvDE
+    restart: always

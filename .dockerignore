@@ -1,0 +1,7 @@
+node_modules
+.expo
+.git
+dist
+web-build
+.env.local
+.DS_Store
