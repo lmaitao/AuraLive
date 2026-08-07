@@ -57,6 +57,7 @@
       "bundler": "metro"
     },
     "plugins": [
+      "./withZegoMaven.js",
       "expo-router",
       [
         "expo-camera",
