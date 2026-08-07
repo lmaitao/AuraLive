@@ -399,12 +399,12 @@ BEGIN
     DELETE FROM auth.users WHERE email IN ('hombre@auralive.com', 'presentadora@auralive.com', 'agencia@auralive.com', 'admin@auralive.com');
 
     -- Usuarios Auth
-    INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
+    INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, is_super_admin, is_sso_user, created_at, updated_at)
     VALUES
-    ('00000000-0000-0000-0000-000000000000', uid_hombre, 'authenticated', 'authenticated', 'hombre@auralive.com', crypt('Aura123456*', gen_salt('bf')), now(), now(), now()),
-    ('00000000-0000-0000-0000-000000000000', uid_streamer, 'authenticated', 'authenticated', 'presentadora@auralive.com', crypt('Aura123456*', gen_salt('bf')), now(), now(), now()),
-    ('00000000-0000-0000-0000-000000000000', uid_agencia, 'authenticated', 'authenticated', 'agencia@auralive.com', crypt('Aura123456*', gen_salt('bf')), now(), now(), now()),
-    ('00000000-0000-0000-0000-000000000000', uid_admin, 'authenticated', 'authenticated', 'admin@auralive.com', crypt('Aura123456*', gen_salt('bf')), now(), now(), now());
+    ('00000000-0000-0000-0000-000000000000', uid_hombre, 'authenticated', 'authenticated', 'hombre@auralive.com', crypt('Aura123456*', gen_salt('bf')), now(), '{"provider": "email", "providers": ["email"]}', '{}', false, false, now(), now()),
+    ('00000000-0000-0000-0000-000000000000', uid_streamer, 'authenticated', 'authenticated', 'presentadora@auralive.com', crypt('Aura123456*', gen_salt('bf')), now(), '{"provider": "email", "providers": ["email"]}', '{}', false, false, now(), now()),
+    ('00000000-0000-0000-0000-000000000000', uid_agencia, 'authenticated', 'authenticated', 'agencia@auralive.com', crypt('Aura123456*', gen_salt('bf')), now(), '{"provider": "email", "providers": ["email"]}', '{}', false, false, now(), now()),
+    ('00000000-0000-0000-0000-000000000000', uid_admin, 'authenticated', 'authenticated', 'admin@auralive.com', crypt('Aura123456*', gen_salt('bf')), now(), '{"provider": "email", "providers": ["email"]}', '{}', false, false, now(), now());
 
     -- Identities
     INSERT INTO auth.identities (id, provider_id, user_id, identity_data, provider, created_at, updated_at)

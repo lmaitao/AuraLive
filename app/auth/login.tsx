@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Image, Modal, ActivityIndicator, ScrollView, Platform, Alert, KeyboardAvoidingView, StyleSheet, useWindowDimensions } from 'react-native';
-import { View, Text, TextInput, TouchableOpacity, Image, Modal, ActivityIndicator, ScrollView, Platform, KeyboardAvoidingView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../hooks/useTheme';
 import { supabase } from '../../lib/supabase';
