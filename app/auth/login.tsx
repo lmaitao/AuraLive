@@ -10,6 +10,8 @@ import { supabase } from '../../lib/supabase';
 import { simulateLivenessScan } from '../../utils/biometricMock';
 import { sendOtpEmail, sendPasswordResetEmail, sendPasswordChangedEmail } from '../../utils/emailService';
 import { ShieldAlert, Sparkles, Lock, Mail, UserCheck, ScanFace, CheckCircle2, Image as ImageIcon, ArrowRight, KeyRound, CalendarDays, ArrowLeft } from 'lucide-react-native';
+import { FontAwesome } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { Cyber3DBackground } from '../../components/Cyber3DBackground';
 import { AuraAlert, AuraAlertProps } from '../../components/AuraAlert';
@@ -24,6 +26,7 @@ export default function LoginAuthScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   const cardOpacity = useSharedValue(0);
   const cardTranslateY = useSharedValue(30);
@@ -185,9 +188,8 @@ export default function LoginAuthScreen() {
         if (error) throw error;
         if (data.user) {
           setCurrentUserId(data.user.id);
-          const code = Math.floor(100000 + Math.random() * 900000).toString();
-          setGeneratedOtpCode(code);
-          await sendOtpEmail(email);
+          // Supabase natively sends the email if Email Confirmations are enabled in the Dashboard.
+          // We will no longer call the mock sendOtpEmail.
           setEmailOtpModalVisible(true);
         }
       }
@@ -266,12 +268,28 @@ export default function LoginAuthScreen() {
   };
 
   const handleVerifyEmailOtpCode = async () => {
-    if (emailOtpCode !== generatedOtpCode && emailOtpCode !== '123456') {
-      setErrorMessage('Código incorrecto.');
-      return;
+    // Si el usuario usa 123456, lo dejamos pasar por motivos de test local
+    if (emailOtpCode === '123456') {
+       setEmailOtpModalVisible(false);
+       if (!cameraPermission?.granted) await requestCameraPermission();
+       setLivenessModalVisible(true);
+       return;
     }
-    setEmailOtpModalVisible(false);
-    setLivenessModalVisible(true);
+
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token: emailOtpCode,
+        type: 'signup'
+      });
+      if (error) throw error;
+      
+      setEmailOtpModalVisible(false);
+      if (!cameraPermission?.granted) await requestCameraPermission();
+      setLivenessModalVisible(true);
+    } catch (e: any) {
+      setAlertConfig({ visible: true, title: "Error OTP", message: e.message || 'Código incorrecto.', type: 'danger', confirmText: 'OK', onConfirm: () => setAlertConfig(null) });
+    }
   };
 
   const handleRunLivenessScan = async () => {
@@ -340,13 +358,13 @@ export default function LoginAuthScreen() {
                   {/* Social Auth */}
                   <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
                     {[
-                      { label: 'Google', provider: 'google', colors: ['#374151','#111827'], border: '#6B7280', icon: 'https://cdn4.iconfinder.com/data/icons/logos-brands-7/512/google_logo-google_icongoogle-512.png' },
-                      { label: 'Facebook', provider: 'facebook', colors: ['#1D4ED8','#111827'], border: '#3B82F6', icon: 'https://cdn4.iconfinder.com/data/icons/social-media-flat-7/64/Social-media_Facebook-512.png' },
-                      { label: 'Apple', provider: 'apple', colors: ['#111827','#000000'], border: '#374151', icon: 'https://cdn4.iconfinder.com/data/icons/social-media-logos-6/512/65-apple-512.png' },
-                    ].map(({ label, provider, colors, border, icon }) => (
+                      { label: 'Google', provider: 'google', colors: ['#374151','#111827'], border: '#6B7280', iconName: 'google' },
+                      { label: 'Facebook', provider: 'facebook', colors: ['#1D4ED8','#111827'], border: '#3B82F6', iconName: 'facebook' },
+                      { label: 'Apple', provider: 'apple', colors: ['#111827','#000000'], border: '#374151', iconName: 'apple' },
+                    ].map(({ label, provider, colors, border, iconName }) => (
                       <TouchableOpacity key={provider} onPress={() => handleOAuthLogin(provider as any)} style={{ flex: 1 }}>
                         <LinearGradient colors={colors as any} style={[styles.socialBtn, { borderColor: border }]}>
-                          <Image source={{ uri: icon }} style={{ width: 16, height: 16, marginRight: 4 }} />
+                          <FontAwesome name={iconName as any} size={16} color="#FFF" style={{ marginRight: 6 }} />
                           <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 9 }}>{label}</Text>
                         </LinearGradient>
                       </TouchableOpacity>
@@ -578,14 +596,43 @@ export default function LoginAuthScreen() {
         </View>
       </Modal>
 
-      {/* Liveness Modal */}
+      {/* Liveness Modal (Real Camera + Profile Picture) */}
       <Modal visible={livenessModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <LinearGradient colors={['#1F2937', '#000000']} style={[styles.modalCard, { borderColor: 'rgba(255,0,127,0.4)', alignItems: 'center' }]}>
-            <ScanFace size={48} color="#FF007F" style={{ marginBottom: 16 }} />
-            <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 18, marginBottom: 20, textAlign: 'center' }}>Reconocimiento Facial 3D</Text>
-            <TouchableOpacity onPress={handleRunLivenessScan} disabled={scanningBiometrics} style={{ width: '100%', backgroundColor: '#DB2777', paddingVertical: 14, borderRadius: 28, alignItems: 'center' }}>
-              {scanningBiometrics ? <ActivityIndicator color="#FFF" /> : <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 13 }}>Iniciar Escaneo</Text>}
+          <LinearGradient colors={['#1F2937', '#000000']} style={[styles.modalCard, { width: '90%', padding: 20, borderColor: 'rgba(255,0,127,0.4)' }]}>
+            <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 18, marginBottom: 16, textAlign: 'center' }}>
+               {scanningBiometrics ? 'Analizando Biometría...' : 'Verificación Facial 3D'}
+            </Text>
+            
+            <View style={{ flexDirection: 'row', height: 180, gap: 10, marginBottom: 20 }}>
+               {/* Profile Picture Reference */}
+               <View style={{ flex: 1, borderRadius: 16, overflow: 'hidden', borderWidth: 2, borderColor: '#374151', position: 'relative' }}>
+                  <Image source={{ uri: avatarUrl }} style={StyleSheet.absoluteFillObject} />
+                  <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.6)', padding: 4 }}>
+                     <Text style={{ color: '#FFF', fontSize: 10, textAlign: 'center', fontWeight: 'bold' }}>Foto de Perfil</Text>
+                  </View>
+               </View>
+
+               {/* Live Camera View */}
+               <View style={{ flex: 1, borderRadius: 16, overflow: 'hidden', borderWidth: 2, borderColor: scanningBiometrics ? '#00E5FF' : '#FF007F', position: 'relative' }}>
+                  {cameraPermission?.granted ? (
+                    <CameraView style={StyleSheet.absoluteFillObject} facing="front" />
+                  ) : (
+                    <View style={{ flex: 1, backgroundColor: '#111', justifyContent: 'center', alignItems: 'center' }}>
+                       <Text style={{ color: '#6B7280', fontSize: 10, textAlign: 'center', paddingHorizontal: 10 }}>Faltan permisos de cámara</Text>
+                    </View>
+                  )}
+                  {scanningBiometrics && (
+                    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, backgroundColor: '#00E5FF', shadowColor: '#00E5FF', shadowOpacity: 1, shadowRadius: 10 }} />
+                  )}
+                  <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.6)', padding: 4 }}>
+                     <Text style={{ color: '#FFF', fontSize: 10, textAlign: 'center', fontWeight: 'bold' }}>Cámara en vivo</Text>
+                  </View>
+               </View>
+            </View>
+
+            <TouchableOpacity onPress={handleRunLivenessScan} disabled={scanningBiometrics || !cameraPermission?.granted} style={{ width: '100%', backgroundColor: scanningBiometrics ? '#374151' : '#DB2777', paddingVertical: 14, borderRadius: 28, alignItems: 'center' }}>
+              {scanningBiometrics ? <ActivityIndicator color="#00E5FF" /> : <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 14 }}>Escanear Rostro</Text>}
             </TouchableOpacity>
           </LinearGradient>
         </View>

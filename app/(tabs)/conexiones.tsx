@@ -66,8 +66,8 @@ export default function ConexionesScreen() {
   const [matchedProfile, setMatchedProfile] = useState<any>(null);
 
   // Card dimensions for Tinder layout
-  const cardWidth = Math.min(width - 24, 420);
-  const cardHeight = Math.min(height * 0.60, 500);
+  const cardWidth = Math.min(width - 32, 400);
+  const cardHeight = height * 0.72;
 
   // Reanimated values for Tinder Swipe
   const translateX = useSharedValue(0);
@@ -150,7 +150,7 @@ export default function ConexionesScreen() {
       </View>
 
       {/* Main Tinder Card Container */}
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 120 }}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 60 }}>
         {currentProfile ? (
           <Animated.View
             {...panResponder.panHandlers}
@@ -207,7 +207,7 @@ export default function ConexionesScreen() {
           </Animated.View>
         ) : null}
 
-        {/* Action Buttons Bar – positioned above floating tab bar */}
+        {/* Action Buttons Bar – positioned overlapping the bottom of the card */}
         <View style={styles.actionsBar}>
           {/* Pass / Dislike */}
           <TouchableOpacity
@@ -215,16 +215,7 @@ export default function ConexionesScreen() {
             activeOpacity={0.8}
             style={styles.passBtn}
           >
-            <X size={26} color="#FF3B30" />
-          </TouchableOpacity>
-
-          {/* Super Like / Star */}
-          <TouchableOpacity
-            onPress={() => triggerNext('like')}
-            activeOpacity={0.8}
-            style={styles.superLikeBtn}
-          >
-            <Sparkles size={22} color="#00E5FF" />
+            <X size={32} color="#FF3B30" />
           </TouchableOpacity>
 
           {/* Like / Heart */}
@@ -233,7 +224,7 @@ export default function ConexionesScreen() {
             activeOpacity={0.8}
             style={styles.likeBtn}
           >
-            <Heart size={26} color="#FFF" fill="#FFF" />
+            <Heart size={32} color="#FFF" fill="#FFF" />
           </TouchableOpacity>
         </View>
       </View>
@@ -284,10 +275,9 @@ const styles = StyleSheet.create({
   tagBadge: { position: 'absolute', top: 12, right: 12, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14, borderWidth: 1, borderColor: '#00E5FF' },
   profileOverlay: { position: 'absolute', bottom: 16, left: 16, right: 16 },
   intentChip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, alignSelf: 'flex-start' },
-  actionsBar: { position: 'absolute', bottom: 10, flexDirection: 'row', alignItems: 'center', gap: 24 },
-  passBtn: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E5E7EB', elevation: 6 },
-  superLikeBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(0,229,255,0.2)', borderWidth: 1.5, borderColor: '#00E5FF', alignItems: 'center', justifyContent: 'center', elevation: 6 },
-  likeBtn: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#FF007F', alignItems: 'center', justifyContent: 'center', elevation: 8 },
+  actionsBar: { position: 'absolute', bottom: -28, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', width: '100%', paddingHorizontal: 50 },
+  passBtn: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center', elevation: 8, shadowColor: '#FF3B30', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+  likeBtn: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#FF8C00', alignItems: 'center', justifyContent: 'center', elevation: 8, shadowColor: '#FF8C00', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
   matchOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.85)', padding: 20 },
   matchCard: { borderRadius: 28, padding: 24, borderWidth: 1.5, borderColor: '#FF007F', width: '100%', maxWidth: 360, alignItems: 'center' },
   matchAvatar: { width: 70, height: 70, borderRadius: 35, borderWidth: 2, borderColor: '#00E5FF' },

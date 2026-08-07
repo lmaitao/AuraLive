@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, ScrollView, Modal, TextInput, Alert } from 'react-native';
+import { View, Text, Image, TouchableOpacity, ScrollView, Modal, TextInput, Alert, StyleSheet } from 'react-native';
 import Animated, { FadeInDown, useSharedValue, useAnimatedStyle, withTiming, withRepeat, Easing, interpolateColor } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -64,6 +64,7 @@ export default function UserProfileScreen() {
   const [aurasToExchange, setAurasToExchange] = useState('5');
   const [svipLevel, setSvipLevel] = useState(3);
   const [wealthLevel, setWealthLevel] = useState(12);
+  const [charismaLevel, setCharismaLevel] = useState(8);
 
   const handleExchangeAuras = () => {
     const amount = parseInt(aurasToExchange, 10);
@@ -211,63 +212,53 @@ export default function UserProfileScreen() {
         <Text style={{ color: '#FFF', fontSize: 22, fontWeight: '900', marginBottom: 16 }}>Mi Perfil AURA LIVE 👤</Text>
 
         <Animated.View entering={FadeInDown.duration(800).springify()} style={{ position: 'relative', marginBottom: 20 }}>
-          {/* Main User Card (3D Gradient) */}
-          <LinearGradient
-            colors={gradientColors as any}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{
-              borderRadius: 24,
-              padding: 16,
-              borderWidth: 2,
-              borderColor: isAgency ? '#F59E0B' : (isFemaleStreamer ? '#FF007F' : '#00E5FF'),
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 14,
-            }}
-          >
+          {/* Banner Image */}
+          <View style={{ height: 160, borderRadius: 20, overflow: 'hidden', marginBottom: 40 }}>
+            <Image source={{ uri: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800' }} style={StyleSheet.absoluteFillObject} />
+            <LinearGradient colors={['transparent', 'rgba(10,10,16,0.95)']} style={StyleSheet.absoluteFillObject} />
+          </View>
+          
+          {/* Overlapping Avatar */}
+          <View style={{ position: 'absolute', top: 110, left: 16, flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
             <View style={{ position: 'relative' }}>
-              <View style={svipLevel > 0 ? { padding: 3, borderRadius: 45, backgroundColor: 'rgba(234,179,8,0.8)', borderWidth: 1, borderColor: '#FDE047' } : { padding: 0 }}>
-                <Image source={{ uri: profile.avatar_url }} style={{ width: 72, height: 72, borderRadius: 36, borderWidth: 2, borderColor: '#000' }} />
+              <View style={svipLevel > 0 ? { padding: 4, borderRadius: 55, backgroundColor: 'rgba(234,179,8,0.8)' } : { padding: 0 }}>
+                <Image source={{ uri: profile.avatar_url }} style={{ width: 90, height: 90, borderRadius: 45, borderWidth: 3, borderColor: '#0A0A10' }} />
               </View>
-              <View style={{ position: 'absolute', bottom: 0, right: 0, width: 18, height: 18, borderRadius: 9, backgroundColor: '#22C55E', borderWidth: 2, borderColor: '#000' }} />
               {svipLevel > 0 && (
-                <View style={{ position: 'absolute', top: -8, right: -4, backgroundColor: '#EAB308', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: '#FEF08A' }}>
-                  <Text style={{ color: '#000', fontWeight: '900', fontSize: 9, italic: 'italic' }}>SVIP {svipLevel}</Text>
+                <View style={{ position: 'absolute', bottom: -5, alignSelf: 'center', backgroundColor: '#EAB308', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, borderWidth: 1, borderColor: '#FEF08A' }}>
+                  <Text style={{ color: '#000', fontWeight: '900', fontSize: 10, italic: 'italic' }}>SVIP {svipLevel}</Text>
                 </View>
               )}
             </View>
-            
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-                <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 17 }}>{profile.full_name}</Text>
-                <TouchableOpacity onPress={() => { setNewName(profile.full_name); setEditNameModal(true); }}>
-                  <Text style={{ color: '#3B82F6', fontSize: 12, fontWeight: '800' }}>✏️</Text>
-                </TouchableOpacity>
-                {walletBalance <= 1500 && (
-                  <View style={{ backgroundColor: 'rgba(236,72,153,0.9)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: '#F472B6' }}>
-                    <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 8, textTransform: 'uppercase' }}>Nuevo 🔥</Text>
-                  </View>
-                )}
-              </View>
-              
-              <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, gap: 4 }}>
-                  {roleIcon}
-                  <Text style={{ color: '#D1D5DB', fontWeight: '800', fontSize: 9, textTransform: 'uppercase' }}>{roleTitle}</Text>
-                </View>
-                {profile.is_identity_verified && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(34,197,94,0.2)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.5)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, gap: 4 }}>
-                    <ShieldCheck size={10} color="#22C55E" />
-                    <Text style={{ color: '#4ADE80', fontWeight: '800', fontSize: 9, textTransform: 'uppercase' }}>Verificado ✅</Text>
-                  </View>
-                )}
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0, 229, 255, 0.15)', borderWidth: 1, borderColor: 'rgba(0, 229, 255, 0.4)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, gap: 4 }}>
-                  <Text style={{ color: '#00E5FF', fontWeight: '900', fontSize: 9 }}>ID: #{100042 + (profile?.id ? profile.id.charCodeAt(0) * 17 : 88)}</Text>
-                </View>
-              </View>
+            <View style={{ paddingBottom: 10 }}>
+               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                 <Text style={{ color: '#F59E0B', fontSize: 18 }}>👑</Text>
+                 <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 22 }}>{profile.full_name}</Text>
+                 <TouchableOpacity onPress={() => { setNewName(profile.full_name); setEditNameModal(true); }}>
+                   <Text style={{ color: '#3B82F6', fontSize: 12, fontWeight: '800' }}>✏️</Text>
+                 </TouchableOpacity>
+               </View>
+               <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                 <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 8, gap: 4 }}>
+                   <Text style={{ color: '#3B82F6', fontSize: 10, fontWeight: 'bold' }}>♂ 38</Text>
+                 </View>
+                 <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,229,255,0.2)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 8, gap: 4, borderWidth: 1, borderColor: '#00E5FF' }}>
+                   <Text style={{ color: '#00E5FF', fontWeight: '900', fontSize: 10 }}>💎 {wealthLevel}</Text>
+                 </View>
+                 <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,0,127,0.2)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 8, gap: 4, borderWidth: 1, borderColor: '#FF007F' }}>
+                   <Text style={{ color: '#FF007F', fontWeight: '900', fontSize: 10 }}>❤️ {charismaLevel}</Text>
+                 </View>
+               </View>
             </View>
-          </LinearGradient>
+          </View>
+          
+          <View style={{ paddingHorizontal: 16, marginTop: 10 }}>
+             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <Text style={{ color: '#9CA3AF', fontSize: 12 }}>ID: {100042 + (profile?.id ? profile.id.charCodeAt(0) * 17 : 88)}</Text>
+                <TouchableOpacity><Text style={{ color: '#3B82F6', fontSize: 14 }}>⎘</Text></TouchableOpacity>
+             </View>
+             <Text style={{ color: '#D1D5DB', fontSize: 13, marginBottom: 16 }}>Ubicación: Santiago, Chile</Text>
+          </View>
         </Animated.View>
 
         <Animated.View entering={FadeInDown.delay(200).duration(800).springify()}>
@@ -287,6 +278,36 @@ export default function UserProfileScreen() {
               <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 18 }}>269</Text>
               <Text style={{ color: '#9CA3AF', fontSize: 11 }}>Visitantes</Text>
             </View>
+          </View>
+
+          {/* Bio & Family Tabs */}
+          <View style={{ flexDirection: 'row', paddingHorizontal: 16, gap: 20, marginBottom: 16 }}>
+             <View>
+                <Text style={{ color: '#FFF', fontSize: 16, fontWeight: 'bold' }}>Sobre mí</Text>
+                <View style={{ height: 3, width: 20, backgroundColor: '#FF007F', marginTop: 4, borderRadius: 2 }} />
+             </View>
+             <TouchableOpacity>
+                <Text style={{ color: '#9CA3AF', fontSize: 16, fontWeight: 'bold' }}>Muro de Honor</Text>
+             </TouchableOpacity>
+          </View>
+          <View style={{ paddingHorizontal: 16, marginBottom: 24 }}>
+             <Text style={{ color: '#FFF', fontSize: 14, fontWeight: 'bold', marginBottom: 8 }}>Bio</Text>
+             <Text style={{ color: '#9CA3AF', fontSize: 13, lineHeight: 20 }}>Aprender otras culturas. Apasionado por la tecnología y la música.</Text>
+          </View>
+
+          <View style={{ paddingHorizontal: 16, marginBottom: 24 }}>
+             <Text style={{ color: '#FFF', fontSize: 14, fontWeight: 'bold', marginBottom: 8 }}>Mi familia</Text>
+             <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', padding: 12, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', justifyContent: 'space-between' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                   <Image source={{ uri: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200' }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                   <View>
+                      <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 15 }}>Tropical Agency 🌴</Text>
+                   </View>
+                </View>
+                <View style={{ backgroundColor: '#F59E0B', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 }}>
+                   <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>👑 Top 14</Text>
+                </View>
+             </TouchableOpacity>
           </View>
 
           {/* Wallets 3D Gradient Cards */}
@@ -332,7 +353,7 @@ export default function UserProfileScreen() {
 
           {/* VIP and Wealth Levels */}
           <View style={{ marginBottom: 20, gap: 10 }}>
-            <TouchableOpacity onPress={() => Alert.alert('Centro SVIP', 'Próximamente')}>
+            <TouchableOpacity onPress={() => router.push('/svip' as any)}>
               <LinearGradient
                 colors={['#1F2937', '#111827']}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: 'rgba(234,179,8,0.4)', padding: 14, borderRadius: 18 }}

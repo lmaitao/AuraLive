@@ -14,8 +14,28 @@ const ALL_ROOMS = [
   { id: 'room-103', title: 'Multi-Cam 8 🎥', hostName: 'Elena Neo', avatarUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=400', bannerUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800', viewerCount: 2310, category: 'Multi-Cam', city: 'Cali', color: ['#06B6D4', '#3B82F6'], tab: 'vivo', filter: 'recomendar' },
   { id: 'room-104', title: 'Juegos y Retos 🎮', hostName: 'Mariana', avatarUrl: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=400', bannerUrl: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800', viewerCount: 310, category: 'Juegos', city: 'Cartagena', color: ['#10B981', '#06B6D4'], tab: 'vivo', filter: 'ligera' },
   { id: 'room-105', title: 'Reunión de Familia Aura 🛡️', hostName: 'Capitana Valentina', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400', bannerUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800', viewerCount: 4500, category: 'Gremio', city: 'Medellín', color: ['#F59E0B', '#EF4444'], tab: 'familia', filter: 'recomendar' },
-  { id: 'room-106', title: 'Torneo de Agencias 🏆', hostName: 'Agencia Master', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400', bannerUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800', viewerCount: 3200, category: 'Agencias', city: 'Bogotá', color: ['#10B981', '#F59E0B'], tab: 'familia', filter: 'recomendar' },
+  { id: 'room-106', title: 'Torneo de Agencias 🏆', hostName: 'Agencia Master', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400', bannerUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800', viewerCount: 3200, category: 'Agencias', city: 'Bogotá', color: ['#10B981', '#F59E0B'], tab: 'vivo', filter: 'recomendar' },
 ];
+
+const MOCK_FAMILY = {
+  name: 'Tropical Agency 🌴',
+  id: '10223',
+  level: 7,
+  members: 76,
+  maxMembers: 180,
+  exp: 5481992,
+  nextExp: 7999999,
+  event: { name: 'Canta con el Alma', time: '08/07 07:00 PM - 09:00 PM' },
+  rooms: [
+    { id: 'f1', host: 'Belys', image: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400' },
+    { id: 'f2', host: 'Luis', image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400' }
+  ],
+  membersList: [
+    { id: 'm1', name: 'Belys 👑', role: 'Capitán familiar', image: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400', online: true, heat: '50' },
+    { id: 'm2', name: 'Escobar 🐂', role: 'Admin', badge: 'Estrella', image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400', online: false, heat: '36.6k' },
+    { id: 'm3', name: 'DEMIAN 🇨🇦', role: 'Admin', image: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=400', online: false, heat: '40.1k' }
+  ]
+};
 
 const AnimatedFeedCard = ({ room, index, onPress, cardWidth, cardHeight }: any) => {
   const scale = useSharedValue(1);
@@ -200,13 +220,93 @@ export default function FeedScreen() {
         </View>
       )}
 
-      {/* Room Grid - Starts high up with tight padding */}
+      {/* Room Grid or Family Dashboard */}
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: HORIZONTAL_PADDING, paddingTop: 4, paddingBottom: 130 }} showsVerticalScrollIndicator={false}>
-        <Animated.View entering={FadeInDown.duration(300)} key={`${activeTab}-${activeFilter}`} style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
-          {filteredRooms.map((room, index) => (
-            <AnimatedFeedCard key={room.id} room={room} index={index} cardWidth={cardWidth} cardHeight={cardHeight} onPress={() => handleEnterRoom(room.id)} />
-          ))}
-        </Animated.View>
+        {activeTab === 'vivo' ? (
+          <Animated.View entering={FadeInDown.duration(300)} key={`${activeTab}-${activeFilter}`} style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+            {filteredRooms.map((room, index) => (
+              <AnimatedFeedCard key={room.id} room={room} index={index} cardWidth={cardWidth} cardHeight={cardHeight} onPress={() => handleEnterRoom(room.id)} />
+            ))}
+          </Animated.View>
+        ) : (
+          <Animated.View entering={FadeInDown.duration(300)} key="familia-dashboard">
+             {/* Render Family View */}
+             <View style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 20, padding: 16, marginBottom: 16 }}>
+               <Text style={{ color: '#FFF', fontSize: 20, fontWeight: '900' }}>{MOCK_FAMILY.name}</Text>
+               <Text style={{ color: '#9CA3AF', fontSize: 12, marginBottom: 12 }}>ID de familia: {MOCK_FAMILY.id}</Text>
+               
+               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                 <View style={{ backgroundColor: '#FF9800', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                   <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>Lv{MOCK_FAMILY.level}</Text>
+                 </View>
+                 <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '700' }}>Nº de miembros del próximo nivel: {MOCK_FAMILY.maxMembers}</Text>
+               </View>
+               
+               <View style={{ height: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
+                  <View style={{ width: `${(MOCK_FAMILY.exp / MOCK_FAMILY.nextExp) * 100}%`, height: '100%', backgroundColor: '#FF007F' }} />
+               </View>
+               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <Text style={{ color: '#9CA3AF', fontSize: 10 }}>{MOCK_FAMILY.exp}/{MOCK_FAMILY.nextExp}</Text>
+                  <TouchableOpacity style={{ backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 10, paddingVertical: 2, borderRadius: 12 }}>
+                    <Text style={{ color: '#FFF', fontSize: 10 }}>↑ upgrade</Text>
+                  </TouchableOpacity>
+               </View>
+             </View>
+
+             <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
+               <View style={{ flex: 1, backgroundColor: 'rgba(0,229,255,0.1)', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: 'rgba(0,229,255,0.3)' }}>
+                 <Text style={{ color: '#00E5FF', fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>Evento Familiar</Text>
+                 <View style={{ backgroundColor: 'rgba(0,0,0,0.5)', padding: 12, borderRadius: 12, alignItems: 'center' }}>
+                    <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 13, marginBottom: 8, textAlign: 'center' }}>{MOCK_FAMILY.event.name}</Text>
+                    <Text style={{ color: '#9CA3AF', fontSize: 9, textAlign: 'center' }}>{MOCK_FAMILY.event.time}</Text>
+                 </View>
+               </View>
+               <View style={{ flex: 1, backgroundColor: 'rgba(255,0,127,0.1)', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: 'rgba(255,0,127,0.3)' }}>
+                 <Text style={{ color: '#FF007F', fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>Sala de la familia</Text>
+                 <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center' }}>
+                   {MOCK_FAMILY.rooms.map(r => (
+                     <View key={r.id} style={{ width: 50, height: 70, borderRadius: 8, overflow: 'hidden' }}>
+                       <Image source={{ uri: r.image }} style={StyleSheet.absoluteFillObject} />
+                       <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.6)', padding: 2 }}>
+                         <Text style={{ color: '#FFF', fontSize: 8, textAlign: 'center' }}>En vivo</Text>
+                       </View>
+                     </View>
+                   ))}
+                 </View>
+               </View>
+             </View>
+
+             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, marginTop: 10 }}>
+               <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '900' }}>Miembros familiares <Text style={{ fontSize: 14, color: '#9CA3AF' }}>({MOCK_FAMILY.members}/{MOCK_FAMILY.maxMembers})</Text></Text>
+               <TouchableOpacity style={{ borderWidth: 1, borderColor: '#FF007F', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}>
+                 <Text style={{ color: '#FF007F', fontWeight: 'bold' }}>Invitar</Text>
+               </TouchableOpacity>
+             </View>
+
+             {MOCK_FAMILY.membersList.map(member => (
+               <View key={member.id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, backgroundColor: 'rgba(255,255,255,0.02)', padding: 12, borderRadius: 16 }}>
+                 <Image source={{ uri: member.image }} style={{ width: 50, height: 50, borderRadius: 25, marginRight: 12, borderWidth: 2, borderColor: member.online ? '#00E5FF' : '#374151' }} />
+                 <View style={{ flex: 1 }}>
+                   <Text style={{ color: '#FFF', fontSize: 16, fontWeight: 'bold', marginBottom: 4 }}>{member.name}</Text>
+                   <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+                     <View style={{ backgroundColor: member.role === 'Capitán familiar' ? '#7C3AED' : '#2563EB', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
+                       <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>{member.role}</Text>
+                     </View>
+                     {member.badge && (
+                       <View style={{ backgroundColor: '#F59E0B', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
+                         <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>⭐ {member.badge}</Text>
+                       </View>
+                     )}
+                   </View>
+                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                     <Text style={{ color: '#9CA3AF', fontSize: 11 }}>🔥 {member.heat}</Text>
+                     <Text style={{ color: member.online ? '#10B981' : '#9CA3AF', fontSize: 11 }}>● {member.online ? 'En línea' : 'Desconectado'}</Text>
+                   </View>
+                 </View>
+               </View>
+             ))}
+          </Animated.View>
+        )}
       </ScrollView>
 
       {/* FAB button */}

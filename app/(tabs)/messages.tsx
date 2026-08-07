@@ -60,6 +60,8 @@ export default function MessagesScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [chats, setChats] = useState(mockChats);
+  const [activeMainTab, setActiveMainTab] = useState<'mensajes' | 'amigos'>('mensajes');
+  const [activeSubTab, setActiveSubTab] = useState<'seguidos' | 'amigos' | 'seguidores'>('amigos');
 
   const filteredChats = chats.filter((c) =>
     c.username.toLowerCase().includes(searchQuery.toLowerCase())
@@ -68,16 +70,32 @@ export default function MessagesScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }} edges={['top']}>
       <Cyber3DBackground />
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <MessageSquare size={22} color="#00E5FF" />
-          <Text style={styles.headerTitle}>Chats Directos 💬</Text>
-        </View>
-        <TouchableOpacity style={styles.editBtn}>
-          <Edit size={16} color="#FFF" />
-        </TouchableOpacity>
+      {/* Header Top Tabs */}
+      <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingTop: 10, paddingBottom: 10 }}>
+         <TouchableOpacity onPress={() => setActiveMainTab('mensajes')} style={{ marginHorizontal: 20 }}>
+            <Text style={{ color: activeMainTab === 'mensajes' ? '#FFF' : '#6B7280', fontSize: 20, fontWeight: '900' }}>Mensajes</Text>
+            {activeMainTab === 'mensajes' && <View style={{ height: 3, width: '100%', backgroundColor: '#00E5FF', marginTop: 4, borderRadius: 2 }} />}
+         </TouchableOpacity>
+         <TouchableOpacity onPress={() => setActiveMainTab('amigos')} style={{ marginHorizontal: 20 }}>
+            <Text style={{ color: activeMainTab === 'amigos' ? '#FFF' : '#6B7280', fontSize: 20, fontWeight: '900' }}>Amigos</Text>
+            {activeMainTab === 'amigos' && <View style={{ height: 3, width: '100%', backgroundColor: '#FF007F', marginTop: 4, borderRadius: 2 }} />}
+         </TouchableOpacity>
       </View>
+
+      {/* Sub Tabs for Amigos */}
+      {activeMainTab === 'amigos' && (
+         <View style={{ flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: 'rgba(255,255,255,0.03)', marginBottom: 10 }}>
+            <TouchableOpacity onPress={() => setActiveSubTab('seguidos')}>
+               <Text style={{ color: activeSubTab === 'seguidos' ? '#00E5FF' : '#9CA3AF', fontWeight: 'bold', fontSize: 13 }}>Seguidos</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setActiveSubTab('amigos')}>
+               <Text style={{ color: activeSubTab === 'amigos' ? '#00E5FF' : '#9CA3AF', fontWeight: 'bold', fontSize: 13 }}>Amigos mutuos</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setActiveSubTab('seguidores')}>
+               <Text style={{ color: activeSubTab === 'seguidores' ? '#00E5FF' : '#9CA3AF', fontWeight: 'bold', fontSize: 13 }}>Seguidores</Text>
+            </TouchableOpacity>
+         </View>
+      )}
 
       {/* Search Input Bar */}
       <View style={{ paddingHorizontal: 16, marginVertical: 10 }}>
@@ -99,51 +117,72 @@ export default function MessagesScreen() {
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 130 }}
         showsVerticalScrollIndicator={false}
       >
-        {filteredChats.map((chat) => (
-          <TouchableOpacity
-            key={chat.id}
-            activeOpacity={0.8}
-            onPress={() => router.push(`/chat/${chat.id}` as any)}
-            style={styles.chatRow}
-          >
-            <View style={{ position: 'relative' }}>
-              <LinearGradient
-                colors={chat.isVip ? ['#FFD700', '#FF007F'] : ['#00E5FF', '#3B82F6']}
-                style={{ padding: 2, borderRadius: 28 }}
+        {activeMainTab === 'mensajes' ? (
+          <>
+            {filteredChats.map((chat) => (
+              <TouchableOpacity
+                key={chat.id}
+                activeOpacity={0.8}
+                onPress={() => router.push(`/chat/${chat.id}` as any)}
+                style={styles.chatRow}
               >
-                <Image source={{ uri: chat.avatar }} style={styles.avatar} />
-              </LinearGradient>
-              {chat.isOnline && <View style={styles.onlineBadge} />}
-            </View>
+                <View style={{ position: 'relative' }}>
+                  <LinearGradient
+                    colors={chat.isVip ? ['#FFD700', '#FF007F'] : ['#00E5FF', '#3B82F6']}
+                    style={{ padding: 2, borderRadius: 28 }}
+                  >
+                    <Image source={{ uri: chat.avatar }} style={styles.avatar} />
+                  </LinearGradient>
+                  {chat.isOnline && <View style={styles.onlineBadge} />}
+                </View>
 
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <Text style={styles.usernameText} numberOfLines={1}>
-                  {chat.username}
-                </Text>
-                <Text style={styles.timestampText}>{chat.timestamp}</Text>
-              </View>
-
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={styles.lastMsgText} numberOfLines={1}>
-                  {chat.lastMessage}
-                </Text>
-                {chat.unreadCount > 0 && (
-                  <View style={styles.unreadBadge}>
-                    <Text style={styles.unreadText}>{chat.unreadCount}</Text>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <Text style={styles.usernameText} numberOfLines={1}>
+                      {chat.username}
+                    </Text>
+                    <Text style={styles.timestampText}>{chat.timestamp}</Text>
                   </View>
-                )}
-              </View>
-            </View>
-          </TouchableOpacity>
-        ))}
 
-        {filteredChats.length === 0 && (
-          <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 60 }}>
-            <MessageSquare size={44} color="#374151" />
-            <Text style={{ color: '#6B7280', fontSize: 13, marginTop: 12, fontWeight: '600' }}>
-              No hay conversaciones activas.
-            </Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={styles.lastMsgText} numberOfLines={1}>
+                      {chat.lastMessage}
+                    </Text>
+                    {chat.unreadCount > 0 && (
+                      <View style={styles.unreadBadge}>
+                        <Text style={styles.unreadText}>{chat.unreadCount}</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))}
+
+            {filteredChats.length === 0 && (
+              <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 60 }}>
+                <MessageSquare size={44} color="#374151" />
+                <Text style={{ color: '#6B7280', fontSize: 13, marginTop: 12, fontWeight: '600' }}>
+                  No hay conversaciones activas.
+                </Text>
+              </View>
+            )}
+          </>
+        ) : (
+          <View>
+             {mockChats.map((friend) => (
+                <View key={`friend-${friend.id}`} style={[styles.chatRow, { alignItems: 'center' }]}>
+                   <Image source={{ uri: friend.avatar }} style={[styles.avatar, { width: 50, height: 50, borderRadius: 25 }]} />
+                   <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 15 }}>{friend.username}</Text>
+                      <Text style={{ color: '#9CA3AF', fontSize: 11, marginTop: 2 }}>Hace 1 hr</Text>
+                   </View>
+                   <TouchableOpacity style={{ backgroundColor: 'rgba(255,0,127,0.15)', borderWidth: 1, borderColor: '#FF007F', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}>
+                      <Text style={{ color: '#FF007F', fontWeight: 'bold', fontSize: 12 }}>
+                         {activeSubTab === 'seguidores' ? '+ Seguir' : 'Chat'}
+                      </Text>
+                   </TouchableOpacity>
+                </View>
+             ))}
           </View>
         )}
       </ScrollView>

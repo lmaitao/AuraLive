@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { Tabs } from 'expo-router';
 import { useTheme } from '../../hooks/useTheme';
-import { Tv, User, Film, MessageSquare, Heart, Gamepad2 } from 'lucide-react-native';
+import { Tv, User, Film, MessageSquare, Heart, Gamepad2, Compass, MessageCircle } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withRepeat, Easing } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -94,38 +94,31 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen
-        name="feed"
+        name="conexiones"
         options={{
-          title: 'En Vivo',
-          tabBarIcon: ({ focused }) => <AnimatedTabItem focused={focused} icon={Tv} label="En Vivo" />,
+          title: 'Recomendar',
+          tabBarIcon: ({ focused }) => <AnimatedTabItem focused={focused} icon={Compass} label="Recomendar" />,
         }}
       />
       <Tabs.Screen
         name="reels"
         options={{
           title: 'Momentos',
-          tabBarIcon: ({ focused }) => <AnimatedTabItem focused={focused} icon={Film} label="Reels" />,
+          tabBarIcon: ({ focused }) => <AnimatedTabItem focused={focused} icon={Film} label="Momentos" />,
         }}
       />
       <Tabs.Screen
-        name="conexiones"
+        name="feed"
         options={{
-          title: 'Conexiones',
-          tabBarIcon: ({ focused }) => <AnimatedTabItem focused={focused} icon={Heart} label="Conexiones" />,
-        }}
-      />
-      <Tabs.Screen
-        name="games"
-        options={{
-          title: 'Juegos',
-          tabBarIcon: ({ focused }) => <AnimatedTabItem focused={focused} icon={Gamepad2} label="Juegos" />,
+          title: 'Conexión',
+          tabBarIcon: ({ focused }) => <AnimatedTabItem focused={focused} icon={Heart} label="Conexión" />,
         }}
       />
       <Tabs.Screen
         name="messages"
         options={{
           title: 'Chats',
-          tabBarIcon: ({ focused }) => <AnimatedTabItem focused={focused} icon={MessageSquare} label="Chats" />,
+          tabBarIcon: ({ focused }) => <AnimatedTabItem focused={focused} icon={MessageCircle} label="Chats" />,
         }}
       />
       <Tabs.Screen
@@ -133,6 +126,12 @@ export default function TabsLayout() {
         options={{
           title: 'Yo',
           tabBarIcon: ({ focused }) => <AnimatedTabItem focused={focused} icon={User} label="Yo" />,
+        }}
+      />
+      <Tabs.Screen
+        name="games"
+        options={{
+          href: null,
         }}
       />
     </Tabs>
