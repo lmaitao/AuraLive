@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Image, ScrollView, Alert, Modal, Pressable, useWindowDimensions, StyleSheet, TextInput } from 'react-native';
+import { View, Text, TouchableOpacity, Image, ScrollView, Alert, Modal, Pressable, useWindowDimensions, StyleSheet, TextInput, ActivityIndicator } from 'react-native';
 import Animated, { FadeInUp, FadeInDown, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, withSpring } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -8,34 +8,6 @@ import { supabase } from '../../lib/supabase';
 import { Search, Trophy, Plus, Video, Users, Sparkles, Flame } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
-const ALL_ROOMS = [
-  { id: 'room-101', title: 'Noche Cyberpunk 🌙', hostName: 'Aura Presentadora', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400', bannerUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800', viewerCount: 1420, category: 'Música', city: 'Medellín', color: ['#8B5CF6', '#3B82F6'], tab: 'vivo', filter: 'recomendar' },
-  { id: 'room-102', title: 'Charla VIP 🌟', hostName: 'Sofia Live', avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400', bannerUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800', viewerCount: 890, category: 'Variedad', city: 'Bogotá', color: ['#EC4899', '#8B5CF6'], tab: 'vivo', filter: 'recomendar' },
-  { id: 'room-103', title: 'Multi-Cam 8 🎥', hostName: 'Elena Neo', avatarUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=400', bannerUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800', viewerCount: 2310, category: 'Multi-Cam', city: 'Cali', color: ['#06B6D4', '#3B82F6'], tab: 'vivo', filter: 'recomendar' },
-  { id: 'room-104', title: 'Juegos y Retos 🎮', hostName: 'Mariana', avatarUrl: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=400', bannerUrl: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800', viewerCount: 310, category: 'Juegos', city: 'Cartagena', color: ['#10B981', '#06B6D4'], tab: 'vivo', filter: 'ligera' },
-  { id: 'room-105', title: 'Reunión de Familia Aura 🛡️', hostName: 'Capitana Valentina', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400', bannerUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800', viewerCount: 4500, category: 'Gremio', city: 'Medellín', color: ['#F59E0B', '#EF4444'], tab: 'familia', filter: 'recomendar' },
-  { id: 'room-106', title: 'Torneo de Agencias 🏆', hostName: 'Agencia Master', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400', bannerUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800', viewerCount: 3200, category: 'Agencias', city: 'Bogotá', color: ['#10B981', '#F59E0B'], tab: 'vivo', filter: 'recomendar' },
-];
-
-const MOCK_FAMILY = {
-  name: 'Tropical Agency 🌴',
-  id: '10223',
-  level: 7,
-  members: 76,
-  maxMembers: 180,
-  exp: 5481992,
-  nextExp: 7999999,
-  event: { name: 'Canta con el Alma', time: '08/07 07:00 PM - 09:00 PM' },
-  rooms: [
-    { id: 'f1', host: 'Belys', image: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400' },
-    { id: 'f2', host: 'Luis', image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400' }
-  ],
-  membersList: [
-    { id: 'm1', name: 'Belys 👑', role: 'Capitán familiar', image: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400', online: true, heat: '50' },
-    { id: 'm2', name: 'Escobar 🐂', role: 'Admin', badge: 'Estrella', image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400', online: false, heat: '36.6k' },
-    { id: 'm3', name: 'DEMIAN 🇨🇦', role: 'Admin', image: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=400', online: false, heat: '40.1k' }
-  ]
-};
 
 const AnimatedFeedCard = ({ room, index, onPress, cardWidth, cardHeight }: any) => {
   const scale = useSharedValue(1);
@@ -85,9 +57,10 @@ export default function FeedScreen() {
   const { width } = useWindowDimensions();
   const theme = useTheme();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'vivo' | 'familia'>('vivo');
   const [activeFilter, setActiveFilter] = useState<'recomendar' | 'ligera'>('recomendar');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [rooms, setRooms] = useState<any[]>([]);
+  const [loadingRooms, setLoadingRooms] = useState(true);
   const [createRoomModalVisible, setCreateRoomModalVisible] = useState(false);
   const [selectedRoomLayout, setSelectedRoomLayout] = useState<'4cam' | '8cam'>('8cam');
 
@@ -128,21 +101,56 @@ export default function FeedScreen() {
 
   useEffect(() => {
     supabase.auth.getUser().then(() => setIsAuthenticated(true)).catch(() => setIsAuthenticated(true));
+    fetchRooms();
   }, []);
 
-  const filteredRooms = ALL_ROOMS.filter(room => {
+  const fetchRooms = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('stream_rooms')
+        .select('id, title, category, viewer_count, is_active, host_id, profiles!stream_rooms_host_id_fkey(full_name, avatar_url)')
+        .eq('is_active', true)
+        .order('viewer_count', { ascending: false })
+        .limit(20);
+
+      if (data && data.length > 0) {
+        setRooms(data);
+      }
+      // Si no hay salas en BD aún, dejamos el array vacío (no mock)
+    } catch (e) {
+      console.log('Error fetching rooms:', e);
+    } finally {
+      setLoadingRooms(false);
+    }
+  };
+
+  // Paleta de colores para las tarjetas de sala
+  const CARD_COLORS = [
+    ['#8B5CF6', '#3B82F6'], ['#EC4899', '#8B5CF6'], ['#06B6D4', '#3B82F6'],
+    ['#10B981', '#06B6D4'], ['#10B981', '#F59E0B'], ['#F59E0B', '#EF4444'],
+  ];
+
+  const BANNER_URLS = [
+    'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800',
+    'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800',
+    'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800',
+    'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800',
+  ];
+
+
+  const filteredRooms = rooms.filter(room => {
     const q = searchQuery.trim().toLowerCase();
+    const hostName = room.profiles?.full_name || '';
     const matchesSearch = q === '' ||
       room.id.toLowerCase().includes(q) ||
-      room.hostName.toLowerCase().includes(q) ||
-      room.title.toLowerCase().includes(q) ||
-      room.city.toLowerCase().includes(q);
+      hostName.toLowerCase().includes(q) ||
+      room.title.toLowerCase().includes(q);
 
     if (!matchesSearch) return false;
-    if (activeTab === 'familia') return room.tab === 'familia';
-    if (activeFilter === 'ligera') return room.filter === 'ligera' || room.viewerCount < 1000;
-    return room.tab === 'vivo';
+    if (activeFilter === 'ligera') return (room.viewer_count || 0) < 1000;
+    return true;
   });
+
 
   const handleEnterRoom = (roomId: string) => {
     if (isAuthenticated === false) {
@@ -166,14 +174,10 @@ export default function FeedScreen() {
       {/* Header - Tight padding */}
       <View style={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 14 }}>
-          <TouchableOpacity onPress={() => setActiveTab('vivo')}>
-            <Text style={{ fontSize: 22, fontWeight: '900', color: activeTab === 'vivo' ? '#FFFFFF' : '#6B7280' }}>En Vivo</Text>
-            {activeTab === 'vivo' && <View style={{ height: 3, width: 20, backgroundColor: '#00E5FF', borderRadius: 2, marginTop: 2, alignSelf: 'center' }} />}
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setActiveTab('familia')}>
-            <Text style={{ fontSize: 18, fontWeight: '700', color: activeTab === 'familia' ? '#FFFFFF' : '#6B7280' }}>Familia 🛡️</Text>
-            {activeTab === 'familia' && <View style={{ height: 3, width: 20, backgroundColor: '#FF007F', borderRadius: 2, marginTop: 2, alignSelf: 'center' }} />}
-          </TouchableOpacity>
+          <View>
+            <Text style={{ fontSize: 22, fontWeight: '900', color: '#FFFFFF' }}>En Vivo</Text>
+            <View style={{ height: 3, width: 20, backgroundColor: '#00E5FF', borderRadius: 2, marginTop: 2, alignSelf: 'center' }} />
+          </View>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <TouchableOpacity style={{ padding: 6, backgroundColor: 'rgba(255,215,0,0.15)', borderRadius: 10, borderWidth: 1, borderColor: '#FFD700' }}>
@@ -202,111 +206,54 @@ export default function FeedScreen() {
         </View>
       )}
 
-      {/* Filter Tabs - Tight padding */}
-      {activeTab === 'vivo' && (
-        <View style={{ paddingHorizontal: 12, paddingVertical: 4, flexDirection: 'row', gap: 8 }}>
-          <TouchableOpacity onPress={() => setActiveFilter('recomendar')}>
-            <LinearGradient colors={activeFilter === 'recomendar' ? ['#00E5FF', '#0284C7'] : ['#1F2937', '#111827']} style={{ paddingHorizontal: 14, paddingVertical: 5, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Flame size={13} color={activeFilter === 'recomendar' ? '#000' : '#9CA3AF'} />
-              <Text style={{ color: activeFilter === 'recomendar' ? '#000' : '#9CA3AF', fontWeight: '800', fontSize: 11 }}>Recomendar</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setActiveFilter('ligera')}>
-            <LinearGradient colors={activeFilter === 'ligera' ? ['#EC4899', '#8B5CF6'] : ['#1F2937', '#111827']} style={{ paddingHorizontal: 14, paddingVertical: 5, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Sparkles size={13} color={activeFilter === 'ligera' ? '#FFF' : '#9CA3AF'} />
-              <Text style={{ color: activeFilter === 'ligera' ? '#FFF' : '#9CA3AF', fontWeight: '800', fontSize: 11 }}>Modo Ligera</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      )}
+      {/* Filter Tabs */}
+      <View style={{ paddingHorizontal: 12, paddingVertical: 4, flexDirection: 'row', gap: 8 }}>
+        <TouchableOpacity onPress={() => setActiveFilter('recomendar')}>
+          <LinearGradient colors={activeFilter === 'recomendar' ? ['#00E5FF', '#0284C7'] : ['#1F2937', '#111827']} style={{ paddingHorizontal: 14, paddingVertical: 5, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Flame size={13} color={activeFilter === 'recomendar' ? '#000' : '#9CA3AF'} />
+            <Text style={{ color: activeFilter === 'recomendar' ? '#000' : '#9CA3AF', fontWeight: '800', fontSize: 11 }}>Recomendar</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setActiveFilter('ligera')}>
+          <LinearGradient colors={activeFilter === 'ligera' ? ['#EC4899', '#8B5CF6'] : ['#1F2937', '#111827']} style={{ paddingHorizontal: 14, paddingVertical: 5, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Sparkles size={13} color={activeFilter === 'ligera' ? '#FFF' : '#9CA3AF'} />
+            <Text style={{ color: activeFilter === 'ligera' ? '#FFF' : '#9CA3AF', fontWeight: '800', fontSize: 11 }}>Modo Ligera</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
 
-      {/* Room Grid or Family Dashboard */}
+      {/* Room Grid */}
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: HORIZONTAL_PADDING, paddingTop: 4, paddingBottom: 130 }} showsVerticalScrollIndicator={false}>
-        {activeTab === 'vivo' ? (
-          <Animated.View entering={FadeInDown.duration(300)} key={`${activeTab}-${activeFilter}`} style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
-            {filteredRooms.map((room, index) => (
-              <AnimatedFeedCard key={room.id} room={room} index={index} cardWidth={cardWidth} cardHeight={cardHeight} onPress={() => handleEnterRoom(room.id)} />
-            ))}
+          <Animated.View entering={FadeInDown.duration(300)} key={activeFilter} style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+            {loadingRooms ? (
+              <View style={{ width: '100%', alignItems: 'center', marginTop: 60 }}>
+                <ActivityIndicator color="#00E5FF" size="large" />
+                <Text style={{ color: '#6B7280', marginTop: 12, fontSize: 13 }}>Cargando salas en vivo...</Text>
+              </View>
+            ) : filteredRooms.length === 0 ? (
+              <View style={{ width: '100%', alignItems: 'center', marginTop: 60 }}>
+                <Text style={{ fontSize: 40, marginBottom: 12 }}>📡</Text>
+                <Text style={{ color: '#9CA3AF', fontSize: 16, fontWeight: '700', marginBottom: 8 }}>Sin salas activas</Text>
+                <Text style={{ color: '#6B7280', fontSize: 13, textAlign: 'center', paddingHorizontal: 20 }}>Sé el primero en abrir una sala y comenzar a transmitir.</Text>
+              </View>
+            ) : (
+              filteredRooms.map((room, index) => {
+                const color = CARD_COLORS[index % CARD_COLORS.length];
+                const banner = BANNER_URLS[index % BANNER_URLS.length];
+                const enriched = {
+                  ...room,
+                  hostName: room.profiles?.full_name || 'Host',
+                  avatarUrl: room.profiles?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+                  bannerUrl: banner,
+                  viewerCount: room.viewer_count || 0,
+                  color,
+                };
+                return (
+                  <AnimatedFeedCard key={room.id} room={enriched} index={index} cardWidth={cardWidth} cardHeight={cardHeight} onPress={() => handleEnterRoom(room.id)} />
+                );
+              })
+            )}
           </Animated.View>
-        ) : (
-          <Animated.View entering={FadeInDown.duration(300)} key="familia-dashboard">
-             {/* Render Family View */}
-             <View style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 20, padding: 16, marginBottom: 16 }}>
-               <Text style={{ color: '#FFF', fontSize: 20, fontWeight: '900' }}>{MOCK_FAMILY.name}</Text>
-               <Text style={{ color: '#9CA3AF', fontSize: 12, marginBottom: 12 }}>ID de familia: {MOCK_FAMILY.id}</Text>
-               
-               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                 <View style={{ backgroundColor: '#FF9800', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
-                   <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>Lv{MOCK_FAMILY.level}</Text>
-                 </View>
-                 <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '700' }}>Nº de miembros del próximo nivel: {MOCK_FAMILY.maxMembers}</Text>
-               </View>
-               
-               <View style={{ height: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
-                  <View style={{ width: `${(MOCK_FAMILY.exp / MOCK_FAMILY.nextExp) * 100}%`, height: '100%', backgroundColor: '#FF007F' }} />
-               </View>
-               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ color: '#9CA3AF', fontSize: 10 }}>{MOCK_FAMILY.exp}/{MOCK_FAMILY.nextExp}</Text>
-                  <TouchableOpacity style={{ backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 10, paddingVertical: 2, borderRadius: 12 }}>
-                    <Text style={{ color: '#FFF', fontSize: 10 }}>↑ upgrade</Text>
-                  </TouchableOpacity>
-               </View>
-             </View>
-
-             <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
-               <View style={{ flex: 1, backgroundColor: 'rgba(0,229,255,0.1)', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: 'rgba(0,229,255,0.3)' }}>
-                 <Text style={{ color: '#00E5FF', fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>Evento Familiar</Text>
-                 <View style={{ backgroundColor: 'rgba(0,0,0,0.5)', padding: 12, borderRadius: 12, alignItems: 'center' }}>
-                    <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 13, marginBottom: 8, textAlign: 'center' }}>{MOCK_FAMILY.event.name}</Text>
-                    <Text style={{ color: '#9CA3AF', fontSize: 9, textAlign: 'center' }}>{MOCK_FAMILY.event.time}</Text>
-                 </View>
-               </View>
-               <View style={{ flex: 1, backgroundColor: 'rgba(255,0,127,0.1)', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: 'rgba(255,0,127,0.3)' }}>
-                 <Text style={{ color: '#FF007F', fontWeight: 'bold', marginBottom: 12, textAlign: 'center' }}>Sala de la familia</Text>
-                 <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center' }}>
-                   {MOCK_FAMILY.rooms.map(r => (
-                     <View key={r.id} style={{ width: 50, height: 70, borderRadius: 8, overflow: 'hidden' }}>
-                       <Image source={{ uri: r.image }} style={StyleSheet.absoluteFillObject} />
-                       <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.6)', padding: 2 }}>
-                         <Text style={{ color: '#FFF', fontSize: 8, textAlign: 'center' }}>En vivo</Text>
-                       </View>
-                     </View>
-                   ))}
-                 </View>
-               </View>
-             </View>
-
-             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, marginTop: 10 }}>
-               <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '900' }}>Miembros familiares <Text style={{ fontSize: 14, color: '#9CA3AF' }}>({MOCK_FAMILY.members}/{MOCK_FAMILY.maxMembers})</Text></Text>
-               <TouchableOpacity style={{ borderWidth: 1, borderColor: '#FF007F', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}>
-                 <Text style={{ color: '#FF007F', fontWeight: 'bold' }}>Invitar</Text>
-               </TouchableOpacity>
-             </View>
-
-             {MOCK_FAMILY.membersList.map(member => (
-               <View key={member.id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, backgroundColor: 'rgba(255,255,255,0.02)', padding: 12, borderRadius: 16 }}>
-                 <Image source={{ uri: member.image }} style={{ width: 50, height: 50, borderRadius: 25, marginRight: 12, borderWidth: 2, borderColor: member.online ? '#00E5FF' : '#374151' }} />
-                 <View style={{ flex: 1 }}>
-                   <Text style={{ color: '#FFF', fontSize: 16, fontWeight: 'bold', marginBottom: 4 }}>{member.name}</Text>
-                   <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 4 }}>
-                     <View style={{ backgroundColor: member.role === 'Capitán familiar' ? '#7C3AED' : '#2563EB', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
-                       <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>{member.role}</Text>
-                     </View>
-                     {member.badge && (
-                       <View style={{ backgroundColor: '#F59E0B', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
-                         <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>⭐ {member.badge}</Text>
-                       </View>
-                     )}
-                   </View>
-                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                     <Text style={{ color: '#9CA3AF', fontSize: 11 }}>🔥 {member.heat}</Text>
-                     <Text style={{ color: member.online ? '#10B981' : '#9CA3AF', fontSize: 11 }}>● {member.online ? 'En línea' : 'Desconectado'}</Text>
-                   </View>
-                 </View>
-               </View>
-             ))}
-          </Animated.View>
-        )}
       </ScrollView>
 
       {/* FAB button */}

@@ -1,35 +1,44 @@
 /**
- * 3D Facial Recognition & Liveness Check Simulation Utility
- * Simulates a hardware biometric Liveness SDK capture flow.
- * Generates a unique 64-character SHA-256 style signature hash per human profile.
+ * 3D Facial Recognition, Real Human Detection & AI Gender Analysis Simulation
+ * Simulates hardware biometric Liveness SDK capture flow & gender identification.
  */
 
 export interface LivenessScanResult {
   success: boolean;
-  faceSignatureHash: string;
+  isRealHuman: boolean;
+  detectedGender: 'female' | 'male';
+  genderMatch: boolean;
   confidenceScore: number;
+  hash: string;
   message: string;
 }
 
-export async function simulateLivenessScan(userId: string): Promise<LivenessScanResult> {
-  // Simulate hardware processing delay (2 seconds)
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+export async function simulateLivenessScan(userId: string, expectedGender: 'female' | 'male' | string = 'female'): Promise<LivenessScanResult> {
+  // Simulate 3D Depth Map Analysis & Neural Liveness Processing (2 seconds)
+  await new Promise((resolve) => setTimeout(resolve, 2200));
 
-  // Generate deterministic unique hash based on user UUID & timestamp
+  // Determine detected gender (matches user expected profile gender)
+  const detectedGender: 'female' | 'male' = expectedGender === 'male' ? 'male' : 'female';
+
+  // Generate deterministic unique 64-character SHA-256 signature hash
   const randomSalt = Math.random().toString(36).substring(2, 10);
   const rawData = `AURA_3D_LIVENESS_${userId}_${Date.now()}_${randomSalt}`;
   
-  // Create a 64-character hex signature
   let hash = '';
   for (let i = 0; i < 64; i++) {
     const charCode = (rawData.charCodeAt(i % rawData.length) * (i + 13)) % 16;
     hash += charCode.toString(16);
   }
 
+  const genderLabel = detectedGender === 'female' ? 'Mujer ♀️' : 'Hombre ♂️';
+
   return {
     success: true,
-    faceSignatureHash: `0x${hash}`,
-    confidenceScore: 99.85,
-    message: 'Escaneo Biométrico 3D Aprobado: 100% Humano Real Verificado.'
+    isRealHuman: true,
+    detectedGender,
+    genderMatch: true,
+    confidenceScore: 99.88,
+    hash: `0x${hash}`,
+    message: `¡Escaneo 3D Aprobado! Persona Real Humana Verificada (${genderLabel}).`
   };
 }

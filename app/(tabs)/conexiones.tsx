@@ -7,63 +7,81 @@ import { Heart, X, Search, Sparkles, MessageCircle, Flame, MapPin } from 'lucide
 import { LinearGradient } from 'expo-linear-gradient';
 import { Cyber3DBackground } from '../../components/Cyber3DBackground';
 
-const MOCK_PROFILES = [
-  {
-    id: '1',
-    name: 'Mariana',
-    age: 23,
-    country: 'República Dominicana 🇩🇴',
-    city: 'Santiago',
-    imageUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=800',
-    status: 'Activa',
-    tag: 'Streamer VIP',
-    intent: 'Buscar una relación',
-    bio: 'Apasionada por la música cyberpunk y los viajes. ¡Escríbeme! ✨',
-  },
-  {
-    id: '2',
-    name: 'Elena Neo',
-    age: 25,
-    country: 'Colombia 🇨🇴',
-    city: 'Medellín',
-    imageUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800',
-    status: 'Activa',
-    tag: 'Popular',
-    intent: 'Hacer amigos',
-    bio: 'Me encanta transmitir en vivo y crear contenido 🎥',
-  },
-  {
-    id: '3',
-    name: 'Sofia Mendoza',
-    age: 22,
-    country: 'México 🇲🇽',
-    city: 'CDMX',
-    imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800',
-    status: 'En Vivo',
-    tag: 'Top 100',
-    intent: 'Conocer gente',
-    bio: 'DJ & Creadora de contenido en AURA LIVE 🎧',
-  },
-  {
-    id: '4',
-    name: 'Valentina',
-    age: 24,
-    country: 'Argentina 🇦🇷',
-    city: 'Buenos Aires',
-    imageUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=800',
-    status: 'Activa',
-    tag: 'Gremio Leader',
-    intent: 'Buscar parejita',
-    bio: 'Buscando con quién compartir momentos en salas 3D 💖',
-  },
-];
+import { useRouter } from 'expo-router';
+import { supabase } from '../../lib/supabase';
+import { isNewUser } from '../../lib/userHelpers';
 
 export default function ConexionesScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const { width, height } = useWindowDimensions();
+  const [profiles, setProfiles] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [matchModalVisible, setMatchModalVisible] = useState(false);
   const [matchedProfile, setMatchedProfile] = useState<any>(null);
+  const [filterTab, setFilterTab] = useState<'populares' | 'nuevos' | 'visitados' | 'todos'>('populares');
+
+  React.useEffect(() => {
+    fetchProfiles(filterTab);
+  }, [filterTab]);
+
+  const fetchProfiles = async (tab: 'populares' | 'nuevos' | 'visitados' | 'todos' = filterTab) => {
+    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      let query = supabase.from('profiles').select('*');
+      if (user) {
+        query = query.neq('id', user.id);
+      }
+
+      if (tab === 'populares') {
+        query = query.order('wealth_level', { ascending: false }).order('created_at', { ascending: false });
+      } else if (tab === 'nuevos') {
+        query = query.order('created_at', { ascending: false });
+      } else if (tab === 'visitados') {
+        query = query.order('wealth_experience', { ascending: false }).order('created_at', { ascending: false });
+      } else {
+        query = query.order('created_at', { ascending: false });
+      }
+
+      const { data, error } = await query.limit(50);
+      if (error) throw error;
+
+      const mappedProfiles = (data || []).map(prof => {
+        let age = 20;
+        if (prof.birth_date) {
+          const birth = new Date(prof.birth_date);
+          const today = new Date();
+          age = today.getFullYear() - birth.getFullYear();
+          if (today.getMonth() < birth.getMonth() || (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())) {
+            age--;
+          }
+        }
+        const isNew = isNewUser(prof);
+        return {
+          id: prof.id,
+          name: prof.full_name || 'Usuario Aura',
+          age: age,
+          country: prof.gender === 'female' ? 'Mujer ♀️' : 'Hombre ♂️',
+          city: 'Aura Live',
+          imageUrl: prof.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800',
+          status: prof.status === 'verified' || prof.is_identity_verified ? 'Verificado ✅' : 'Activo',
+          tag: (prof.wealth_level || 0) > 5 ? `Popular Nv.${prof.wealth_level} 🔥` : (prof.svip_level ? `SVIP ${prof.svip_level}` : (isNew ? 'Nuevo 🍀' : 'Usuario Aura')),
+          intent: 'Conocer gente y transmitir',
+          bio: prof.bio || '¡Hola! Estoy en Aura Live',
+        };
+      });
+
+      setProfiles(mappedProfiles);
+      setCurrentIndex(0);
+    } catch (e) {
+      console.error('Error fetching real profiles', e);
+      setProfiles([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Card dimensions for Tinder layout
   const cardWidth = Math.min(width - 32, 400);
@@ -74,12 +92,47 @@ export default function ConexionesScreen() {
   const rotate = useSharedValue(0);
   const cardScale = useSharedValue(1);
 
-  const currentProfile = MOCK_PROFILES[currentIndex % MOCK_PROFILES.length];
+  const currentProfile = profiles.length > 0 ? profiles[currentIndex % profiles.length] : null;
 
-  const triggerNext = (direction: 'like' | 'pass') => {
-    if (direction === 'like') {
+  const triggerNext = async (direction: 'like' | 'pass') => {
+    if (direction === 'like' && currentProfile) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          // 1. Follow the user in Supabase
+          await supabase.from('followers').insert({
+            follower_id: user.id,
+            following_id: currentProfile.id
+          });
+          
+          // 2. Send Match Notification DM to target user
+          await supabase.from('direct_messages').insert({
+            sender_id: user.id,
+            receiver_id: currentProfile.id,
+            content: '¡Te he dado un Match 💕 en Conexiones Aura Live! Sígueme de vuelta para chatear en privado.',
+          });
+
+          // 3. Check if they follow us back (Mutual Match)
+          const { data: mutual } = await supabase.from('followers')
+            .select('*')
+            .eq('follower_id', currentProfile.id)
+            .eq('following_id', user.id)
+            .maybeSingle();
+            
+          if (mutual) {
+            translateX.value = withTiming(width * 1.2, { duration: 300 }, () => {
+              runOnJS(handleMatch)(currentProfile);
+            });
+            rotate.value = withTiming(15, { duration: 300 });
+            return; // Skip normal advance
+          }
+        }
+      } catch (e) {
+        console.log('Follow/Match error:', e);
+      }
+      
       translateX.value = withTiming(width * 1.2, { duration: 300 }, () => {
-        runOnJS(handleMatch)(currentProfile);
+        runOnJS(advanceIndex)();
       });
       rotate.value = withTiming(15, { duration: 300 });
     } else {
@@ -101,7 +154,7 @@ export default function ConexionesScreen() {
     rotate.value = 0;
     cardScale.value = 0.95;
     cardScale.value = withSpring(1);
-    setCurrentIndex((prev) => (prev + 1) % MOCK_PROFILES.length);
+    setCurrentIndex((prev) => (prev + 1) % Math.max(1, profiles.length));
   };
 
   const animatedCardStyle = useAnimatedStyle(() => ({
@@ -141,12 +194,33 @@ export default function ConexionesScreen() {
       <View style={styles.header}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Flame size={22} color="#FF007F" />
-          <Text style={{ color: '#FFF', fontSize: 20, fontWeight: '900' }}>Conexiones 3D 💕</Text>
+          <Text style={{ color: '#FFF', fontSize: 20, fontWeight: '900' }}>Conexiones 💕</Text>
         </View>
         <View style={styles.counterBadge}>
           <Sparkles size={12} color="#FFD700" />
           <Text style={{ color: '#FFD700', fontSize: 11, fontWeight: '800' }}>Match Radar</Text>
         </View>
+      </View>
+
+      {/* Filter Tabs: Populares / Nuevos / Visitados */}
+      <View style={{ flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingVertical: 8, justifyContent: 'center' }}>
+        <TouchableOpacity onPress={() => setFilterTab('populares')}>
+          <LinearGradient colors={filterTab === 'populares' ? ['#FF007F', '#7C3AED'] : ['#1F2937', '#111827']} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Flame size={13} color={filterTab === 'populares' ? '#FFF' : '#9CA3AF'} />
+            <Text style={{ color: filterTab === 'populares' ? '#FFF' : '#9CA3AF', fontWeight: '800', fontSize: 11 }}>🔥 Populares</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setFilterTab('nuevos')}>
+          <LinearGradient colors={filterTab === 'nuevos' ? ['#00E5FF', '#0284C7'] : ['#1F2937', '#111827']} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Sparkles size={13} color={filterTab === 'nuevos' ? '#000' : '#9CA3AF'} />
+            <Text style={{ color: filterTab === 'nuevos' ? '#000' : '#9CA3AF', fontWeight: '800', fontSize: 11 }}>🍀 Nuevos</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setFilterTab('visitados')}>
+          <LinearGradient colors={filterTab === 'visitados' ? ['#34D399', '#059669'] : ['#1F2937', '#111827']} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Text style={{ color: filterTab === 'visitados' ? '#000' : '#9CA3AF', fontWeight: '800', fontSize: 11 }}>👁️ Visitados</Text>
+          </LinearGradient>
+        </TouchableOpacity>
       </View>
 
       {/* Main Tinder Card Container */}
@@ -247,7 +321,10 @@ export default function ConexionesScreen() {
             </View>
 
             <TouchableOpacity
-              onPress={() => setMatchModalVisible(false)}
+              onPress={() => {
+                setMatchModalVisible(false);
+                router.push('/(tabs)/messages' as any);
+              }}
               activeOpacity={0.85}
             >
               <LinearGradient colors={['#FF007F', '#7C3AED']} style={styles.chatBtn}>

@@ -6,6 +6,8 @@ import { Mic, MicOff, Camera as CameraIcon, VideoOff, Grid, Shield, Swords, Flam
 import { LinearGradient } from 'expo-linear-gradient';
 import { CameraGrid4 } from './CameraGrid4';
 import { CameraGrid8 } from './CameraGrid8';
+import { zegoService } from '../lib/ZegoService';
+import { supabase } from '../lib/supabase';
 
 export interface Participant {
   id: string;
@@ -14,18 +16,11 @@ export interface Participant {
   isHost?: boolean;
   isMuted?: boolean;
   isVideoFrozen?: boolean;
+  streamID?: string;
+  svipLevel?: number;
 }
 
-const DEFAULT_PARTICIPANTS: Participant[] = [
-  { id: '1', name: 'Host Aura (Tú) 👑', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400', isHost: true },
-  { id: '2', name: 'Sofia Streamer 🌟', avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400' },
-  { id: '3', name: 'Elena Neo 🎥', avatarUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=400' },
-  { id: '4', name: 'Mariana Live 🎵', avatarUrl: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=400' },
-  { id: '5', name: 'Capitana Val 🛡️', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400' },
-  { id: '6', name: 'Agencia Master 🏆', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400' },
-  { id: '7', name: 'Carlos Gamer 🎮', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400' },
-  { id: '8', name: 'Camila VIP 💎', avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400' },
-];
+
 
 export interface ZegoVideoEngineProps {
   layoutMode: '4_cam' | '8_cam';
@@ -33,6 +28,7 @@ export interface ZegoVideoEngineProps {
   onLayoutChange: (mode: '4_cam' | '8_cam') => void;
   onSelectUser?: (user: { id: string; name: string; avatarUrl: string }) => void;
   userProfileAvatar?: string;
+  roomId?: string;
 }
 
 export const ZegoVideoEngine: React.FC<ZegoVideoEngineProps> = ({
@@ -41,6 +37,7 @@ export const ZegoVideoEngine: React.FC<ZegoVideoEngineProps> = ({
   onLayoutChange,
   onSelectUser,
   userProfileAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+  roomId = 'default-room'
 }) => {
   const [permission, requestPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
@@ -61,18 +58,51 @@ export const ZegoVideoEngine: React.FC<ZegoVideoEngineProps> = ({
 
   useEffect(() => {
     const initRealTimeLogic = async () => {
-      // Solicitar permisos reales de hardware
       if (!permission?.granted) await requestPermission();
       if (!micPermission?.granted) await requestMicPermission();
 
-      // Simular conexión al servidor WebRTC / ZegoCloud
-      setTimeout(() => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        const userId = user?.id || 'user-' + Math.floor(Math.random() * 1000);
+        let hostName = 'Host Aura 👑';
+        let hostAvatar = userProfileAvatar;
+
+        if (user?.id) {
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('full_name, avatar_url')
+            .eq('id', user.id)
+            .maybeSingle();
+          if (prof) {
+            hostName = prof.full_name || 'Host Aura 👑';
+            if (prof.avatar_url) hostAvatar = prof.avatar_url;
+          }
+        }
+        
+        await zegoService.initEngine();
+        await zegoService.loginRoom(roomId, userId, hostName);
+        
+        if (isHost) {
+          const streamID = `${roomId}_${userId}_main`;
+          await zegoService.startPublishingStream(streamID);
+        }
+        
         setIsConnecting(false);
-        setParticipants(DEFAULT_PARTICIPANTS);
-      }, 1500); // 1.5s de conexión real al SDK
+        setParticipants([
+          { id: userId, name: hostName, avatarUrl: hostAvatar, isHost: true },
+        ]);
+      } catch (e) {
+        console.error("Zego connection error", e);
+        setIsConnecting(false);
+      }
     };
     initRealTimeLogic();
-  }, [permission, micPermission]);
+
+    return () => {
+      zegoService.stopPublishingStream();
+      zegoService.logoutRoom(roomId);
+    };
+  }, [permission, micPermission, roomId, isHost]);
 
   const startRealWebcam = () => setCameraActive(true);
 
@@ -90,8 +120,13 @@ export const ZegoVideoEngine: React.FC<ZegoVideoEngineProps> = ({
   const toggleMic = () => setMicActive(!micActive);
 
   const toggleMuteParticipant = (id: string) => {
+    const target = participants.find(p => p.id === id);
+    if (target && (target.svipLevel || 0) >= 2) {
+      Alert.alert('Inmunidad SVIP 🛡️', `${target.name} tiene SVIP Nivel ${target.svipLevel} y es inmune a silenciamientos en sala.`);
+      return;
+    }
     if (!isHost) {
-      Alert.alert('Acceso Denegado 🔒', 'Solo la presentadora puede silenciar a los usuarios.');
+      Alert.alert('Acceso Denegado 🔒', 'Solo la presentadora o un SVIP 1+ pueden silenciar a usuarios normales.');
       return;
     }
     setParticipants((prev) =>
@@ -99,15 +134,48 @@ export const ZegoVideoEngine: React.FC<ZegoVideoEngineProps> = ({
     );
   };
 
+  const handleOccupySeat = async (seatId: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert('Inicia Sesión', 'Debes iniciar sesión para subir al puesto.');
+        return;
+      }
+      const { data: prof } = await supabase.from('profiles').select('full_name, avatar_url').eq('id', user.id).single();
+      
+      const newParticipant: Participant = {
+        id: user.id,
+        name: prof?.full_name || 'Usuario Aura',
+        avatarUrl: prof?.avatar_url || userProfileAvatar,
+        isMuted: false,
+      };
+
+      setParticipants(prev => [...prev.filter(p => p.id !== user.id), newParticipant]);
+      Alert.alert('¡Puesto Ocupado! 🎙️', 'Te has unido al puesto en vivo de la sala.');
+    } catch (e) {
+      console.log('Error occupying seat:', e);
+    }
+  };
+
   const toggleFreezeParticipant = (id: string) => {
+    const target = participants.find(p => p.id === id);
+    if (target && (target.svipLevel || 0) >= 2) {
+      Alert.alert('Inmunidad SVIP 🛡️', `${target.name} tiene SVIP Nivel ${target.svipLevel} y su cámara no puede ser bloqueada.`);
+      return;
+    }
     setParticipants((prev) =>
       prev.map((p) => (p.id === id ? { ...p, isVideoFrozen: !p.isVideoFrozen } : p))
     );
   };
 
   const handleKickParticipant = (id: string, name: string) => {
+    const target = participants.find(p => p.id === id);
+    if (target && (target.svipLevel || 0) >= 2) {
+      Alert.alert('Inmunidad SVIP 🛡️', `${name} posee SVIP Nivel ${target.svipLevel} y no puede ser expulsado de ninguna sala.`);
+      return;
+    }
     if (!isHost) {
-      Alert.alert('Acceso Denegado 🔒', 'Solo la presentadora puede expulsar a los usuarios.');
+      Alert.alert('Acceso Denegado 🔒', 'Solo la presentadora o moderadores autorizados pueden expulsar usuarios.');
       return;
     }
     Alert.alert('Expulsar Participante', `¿Expulsar a ${name} de la sala?`, [
@@ -199,6 +267,7 @@ export const ZegoVideoEngine: React.FC<ZegoVideoEngineProps> = ({
           micActive={micActive}
           onToggleMute={toggleMuteParticipant}
           onSelectUser={onSelectUser}
+          onOccupySeat={handleOccupySeat}
         />
       ) : (
         <CameraGrid8
@@ -207,6 +276,7 @@ export const ZegoVideoEngine: React.FC<ZegoVideoEngineProps> = ({
           micActive={micActive}
           onToggleMute={toggleMuteParticipant}
           onSelectUser={onSelectUser}
+          onOccupySeat={handleOccupySeat}
         />
       )}
 

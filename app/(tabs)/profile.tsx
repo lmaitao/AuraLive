@@ -1,18 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, ScrollView, Modal, TextInput, Alert, StyleSheet } from 'react-native';
+import { View, Text, Image, TouchableOpacity, ScrollView, Modal, TextInput, Alert, StyleSheet, ActivityIndicator, useWindowDimensions } from 'react-native';
 import Animated, { FadeInDown, useSharedValue, useAnimatedStyle, withTiming, withRepeat, Easing, interpolateColor } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../hooks/useTheme';
 import { supabase } from '../../lib/supabase';
 import { DailyCheckinCard } from '../../components/DailyCheckinCard';
-import { User, Users, Wallet, ShieldCheck, Award, Building2, ShieldAlert, LogOut, ChevronRight, Plus, Image as ImageIcon, Trash2, Camera, Sparkles } from 'lucide-react-native';
+import { User, Users, Wallet, ShieldCheck, Award, Building2, ShieldAlert, LogOut, ChevronRight, Plus, Image as ImageIcon, Trash2, Camera, Sparkles, CheckCircle2, ScanFace, X, Camera as CameraIcon } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Cyber3DBackground } from '../../components/Cyber3DBackground';
+import * as ImagePicker from 'expo-image-picker';
+import { simulateLivenessScan } from '../../utils/biometricMock';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { AuraAlert, AuraAlertProps } from '../../components/AuraAlert';
 
 export default function UserProfileScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const maxCardWidth = Math.min(width - 32, 540);
 
   // Holographic Glow Animation
   const glowProgress = useSharedValue(0);
@@ -33,24 +39,90 @@ export default function UserProfileScreen() {
   });
 
   const [profile, setProfile] = useState<{
+    id: string;
     full_name: string;
     email: string;
     avatar_url: string;
     gender: string;
     phone_number: string;
     birth_date: string;
+    bio: string;
     is_identity_verified: boolean;
     is_agency: boolean;
-  }>({
-    full_name: 'Usuario Aura',
-    email: 'usuario.aura@auralive.com',
-    avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-    gender: 'female',
-    phone_number: '+57 300 123 4567',
-    birth_date: '1995-01-01',
-    is_identity_verified: true,
-    is_agency: true,
-  });
+    is_superadmin: boolean;
+  } | null>(null);
+
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [aurasBalance, setAurasBalance] = useState(0);
+  const [cloverBalance, setCloverBalance] = useState(3);
+  const [svipLevel, setSvipLevel] = useState(0);
+  const [wealthLevel, setWealthLevel] = useState(0);
+  const [charismaLevel, setCharismaLevel] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [visitorsCount, setVisitorsCount] = useState(0);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [alertConfig, setAlertConfig] = useState<AuraAlertProps | null>(null);
+
+  useEffect(() => {
+    fetchUserProfile();
+  }, []);
+
+  const fetchUserProfile = async () => {
+    setLoadingProfile(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.replace('/auth/login' as any);
+        return;
+      }
+
+      // Fetch Profile
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+        
+      if (profileError) throw profileError;
+      setProfile(profileData);
+      setSvipLevel(profileData.svip_level || 0);
+      setWealthLevel(profileData.wealth_level || 0);
+      setPhotoGallery(profileData.photo_gallery || []);
+
+      // Fetch Wallet
+      const { data: walletData, error: walletError } = await supabase
+        .from('wallets')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+        
+      if (walletError && walletError.code !== 'PGRST116') throw walletError;
+      if (walletData) {
+        setWalletBalance(walletData.coin_balance || 0);
+        setAurasBalance(walletData.aura_balance || 0);
+        setCloverBalance(walletData.clover_balance ?? 3);
+      }
+
+      // Calculate Charisma (Mock logic based on auras for now)
+      setCharismaLevel(Math.floor((walletData?.aura_balance || 0) / 100));
+
+      // Fetch real follower counts
+      const [{ count: followingCnt }, { count: followersCnt }, { count: visitorsCnt }] = await Promise.all([
+        supabase.from('followers').select('*', { count: 'exact', head: true }).eq('follower_id', user.id),
+        supabase.from('followers').select('*', { count: 'exact', head: true }).eq('following_id', user.id),
+        supabase.from('profile_visitors').select('*', { count: 'exact', head: true }).eq('profile_id', user.id),
+      ]);
+      setFollowingCount(followingCnt || 0);
+      setFollowersCount(followersCnt || 0);
+      setVisitorsCount(visitorsCnt || 0);
+
+    } catch (e: any) {
+      console.error('Error fetching profile:', e.message);
+    } finally {
+      setLoadingProfile(false);
+    }
+  };
 
   const [editBirthDateModal, setEditBirthDateModal] = useState(false);
   const [newBirthDate, setNewBirthDate] = useState('');
@@ -58,13 +130,11 @@ export default function UserProfileScreen() {
   const [editNameModal, setEditNameModal] = useState(false);
   const [newName, setNewName] = useState('');
 
-  const [walletBalance, setWalletBalance] = useState(1500);
-  const [aurasBalance, setAurasBalance] = useState(10);
+  const [editBioModal, setEditBioModal] = useState(false);
+  const [newBio, setNewBio] = useState('');
+
   const [exchangeModalVisible, setExchangeModalVisible] = useState(false);
   const [aurasToExchange, setAurasToExchange] = useState('5');
-  const [svipLevel, setSvipLevel] = useState(3);
-  const [wealthLevel, setWealthLevel] = useState(12);
-  const [charismaLevel, setCharismaLevel] = useState(8);
 
   const handleExchangeAuras = () => {
     const amount = parseInt(aurasToExchange, 10);
@@ -88,18 +158,14 @@ export default function UserProfileScreen() {
     );
   };
 
-  const [photoGallery, setPhotoGallery] = useState<string[]>([
-    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600',
-    'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600',
-    'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=600',
-  ]);
+  const [photoGallery, setPhotoGallery] = useState<string[]>([]);
   const [addPhotoModalVisible, setAddPhotoModalVisible] = useState(false);
   const [newPhotoUrl, setNewPhotoUrl] = useState('');
   
-  const [agencyStatus, setAgencyStatus] = useState<'none' | 'pending' | 'approved'>(profile.is_agency ? 'approved' : 'none');
+  const [agencyStatus, setAgencyStatus] = useState<'none' | 'pending' | 'approved'>(profile?.is_agency ? 'approved' : 'none');
 
-  const isFemaleStreamer = profile.gender === 'female';
-  const isAgency = profile.is_agency || agencyStatus === 'approved';
+  const isFemaleStreamer = profile?.gender === 'female';
+  const isAgency = profile?.is_agency || agencyStatus === 'approved';
   
   let roleTitle = 'Usuario Estándar';
   let gradientColors = ['#1F2937', '#111827'];
@@ -115,149 +181,319 @@ export default function UserProfileScreen() {
     roleIcon = <Sparkles size={12} color="#FF007F" />;
   }
 
-  useEffect(() => {
-    async function loadUserProfile() {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-          if (prof) {
-            setProfile({
-              full_name: prof.full_name || 'Usuario Aura',
-              email: prof.email || user.email || '',
-              avatar_url: prof.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-              gender: prof.gender || 'female',
-              phone_number: prof.phone_number || '',
-              birth_date: prof.birth_date || 'N/A',
-              is_identity_verified: prof.is_identity_verified || false,
-              is_agency: prof.is_agency_account ?? false,
-            });
-            if (prof.is_agency_account) setAgencyStatus('approved');
-            setSvipLevel(prof.svip_level || 0);
-            setWealthLevel(prof.wealth_level || 0);
-          }
-
-          const { data: wall } = await supabase.from('wallets').select('*').eq('user_id', user.id).single();
-          if (wall) setWalletBalance(wall.coin_balance || 1500);
-        }
-      } catch (e) {}
+  const handleAddPhotoFromLibrary = async () => {
+    if (photoGallery.length >= 5) {
+      setAlertConfig({
+        visible: true,
+        title: 'Límite de Galería 📸',
+        message: 'Has alcanzado el límite máximo de 6 fotos en total (1 Foto de Perfil + 5 Fotos en Galería).',
+        type: 'warning',
+        confirmText: 'Entendido',
+        onConfirm: () => setAlertConfig(null)
+      });
+      return;
     }
-    loadUserProfile();
-  }, []);
 
-  const handleAddPhotoToGallery = () => {
-    if (!newPhotoUrl.trim()) return;
-    setPhotoGallery([...photoGallery, newPhotoUrl.trim()]);
-    setNewPhotoUrl('');
-    setAddPhotoModalVisible(false);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0].uri) {
+        const uri = result.assets[0].uri;
+        const updatedGallery = [...photoGallery, uri];
+        
+        if (profile) {
+          await supabase.from('profiles').update({ photo_gallery: updatedGallery }).eq('id', profile.id);
+        }
+        setPhotoGallery(updatedGallery);
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'No se pudo agregar la foto.');
+    }
   };
 
-  const handleLogout = async () => {
+  const handleDeletePhotoFromGallery = async (index: number) => {
+    const updatedGallery = photoGallery.filter((_, i) => i !== index);
+    if (profile) {
+      await supabase.from('profiles').update({ photo_gallery: updatedGallery }).eq('id', profile.id);
+    }
+    setPhotoGallery(updatedGallery);
+  };
+
+  const handleSaveName = async () => {
+    if (newName.trim() === '') return;
+    if (!profile) return;
+    
+    try {
+      const { error } = await supabase.from('profiles').update({ full_name: newName }).eq('id', profile.id);
+      if (error) throw error;
+      setProfile(prev => prev ? { ...prev, full_name: newName } : null);
+      setEditNameModal(false);
+      setNewName('');
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
+  const handleSaveBio = async () => {
+    if (!profile) return;
+    try {
+      const { error } = await supabase.from('profiles').update({ bio: newBio }).eq('id', profile.id);
+      if (error) throw error;
+      setProfile(prev => prev ? { ...prev, bio: newBio } : null);
+      setEditBioModal(false);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
+  const handleSaveBirthDate = async () => {
+    if (newBirthDate.trim() === '') return;
+    if (!profile) return;
+    
+    try {
+      // Basic validation for YYYY-MM-DD
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(newBirthDate)) {
+        Alert.alert('Error', 'El formato debe ser YYYY-MM-DD');
+        return;
+      }
+      
+      const { error } = await supabase.from('profiles').update({ birth_date: newBirthDate }).eq('id', profile.id);
+      if (error) throw error;
+      
+      setProfile(prev => prev ? { ...prev, birth_date: newBirthDate } : null);
+      setEditBirthDateModal(false);
+      setNewBirthDate('');
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
+  const [scanningBiometrics, setScanningBiometrics] = useState(false);
+  const [livenessModalVisible, setLivenessModalVisible] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+
+  const handleAvatarChange = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0].uri) {
+        const uri = result.assets[0].uri;
+        if (!profile) return;
+
+        const { error } = await supabase
+          .from('profiles')
+          .update({ avatar_url: uri })
+          .eq('id', profile.id);
+
+        if (error) throw error;
+        setProfile(prev => prev ? { ...prev, avatar_url: uri } : null);
+        Alert.alert('Foto Actualizada ✅', 'Tu foto de perfil ha sido actualizada.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'No se pudo cambiar la foto');
+    }
+  };
+
+  const handleOpenBiometricsModal = async () => {
+    if (!profile) return;
+    if (!cameraPermission?.granted) {
+      const res = await requestCameraPermission();
+      if (!res.granted) {
+        Alert.alert('Permiso de Cámara Requerido', 'AuraLive requiere acceso a tu cámara frontal para realizar la verificación facial 3D.');
+        return;
+      }
+    }
+    setLivenessModalVisible(true);
+  };
+
+  const handleExecuteBiometricsScan = async () => {
+    if (!profile) return;
+    setScanningBiometrics(true);
+    try {
+      const res = await simulateLivenessScan(profile.id, profile.gender || 'female');
+      if (res.success && res.isRealHuman && res.hash) {
+        const { error } = await supabase.rpc('liveness_verify', {
+          p_user_id: profile.id,
+          p_face_signature_hash: res.hash,
+        });
+
+        if (error) throw error;
+
+        const genderLabel = profile.gender === 'female' ? 'Mujer ♀️' : 'Hombre ♂️';
+
+        setProfile(prev => prev ? { ...prev, is_identity_verified: true, status: 'verified' } : null);
+        setWalletBalance(prev => prev + 50);
+        setLivenessModalVisible(false);
+
+        setAlertConfig({
+          visible: true,
+          title: '¡Verificación Facial Exitosa! 🎉',
+          message: `Identidad Humana Real Verificada (${genderLabel}). Tu rostro ha sido validado correctamente. ¡Se han acreditado +50 Monedas de recompensa a tu billetera y asignado la insignia VERIFICADO ✅!`,
+          type: 'success',
+          confirmText: '¡Excelente!',
+          onConfirm: () => setAlertConfig(null),
+        });
+      }
+    } catch (e: any) {
+      Alert.alert('Error de Verificación', e.message || 'Fallo en el escaneo facial.');
+    } finally {
+      setScanningBiometrics(false);
+    }
+  };
+
+  const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.replace('/auth/login' as any);
   };
 
-  const handleUpdateBirthDate = async () => {
-    if (!newBirthDate) return;
-    const parts = newBirthDate.split('/');
-    if (parts.length !== 3) {
-      Alert.alert('Error', 'Usa el formato DD/MM/AAAA');
-      return;
-    }
-    const day = parseInt(parts[0], 10);
-    const month = parseInt(parts[1], 10) - 1;
-    const year = parseInt(parts[2], 10);
-    const birth = new Date(year, month, day);
-    const today = new Date();
-    let age = today.getFullYear() - birth.getFullYear();
-    const m = today.getMonth() - birth.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
-    
-    if (age < 18) {
-      Alert.alert('No Autorizado 🔞', 'Debes ser mayor de 18 años para estar en Aura Live.');
-      return;
-    }
-
-    const pgDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      await supabase.from('profiles').update({ birth_date: pgDate }).eq('id', user.id);
-      setProfile({ ...profile, birth_date: pgDate });
-      setEditBirthDateModal(false);
-      Alert.alert('Éxito', 'Fecha de nacimiento actualizada.');
-    }
+  const handleDeleteAccount = () => {
+    setAlertConfig({
+      visible: true,
+      title: '¿Eliminar Cuenta Definitivamente? ⚠️',
+      message: 'Esta acción es totalmente irreversible. Se borrarán todos tus datos de perfil, saldo de monedas, regalos e historial en AURA LIVE.',
+      type: 'danger',
+      confirmText: 'Sí, Eliminar Cuenta 🗑️',
+      cancelText: 'Cancelar',
+      onConfirm: async () => {
+        setAlertConfig(null);
+        await executeAccountDeletion();
+      },
+      onCancel: () => setAlertConfig(null),
+    });
   };
 
-  const handleUpdateName = async () => {
-    if (!newName.trim()) return;
+  const executeAccountDeletion = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from('profiles').update({ full_name: newName.trim() }).eq('id', user.id);
-        setProfile({ ...profile, full_name: newName.trim() });
-        setEditNameModal(false);
-        Alert.alert('Éxito', 'Nombre actualizado correctamente.');
+      if (!profile) return;
+      setLoadingProfile(true);
+      const userId = profile.id;
+
+      // 1. Try RPC function delete_user_account
+      const { error: rpcErr } = await supabase.rpc('delete_user_account', { p_user_id: userId });
+
+      if (rpcErr) {
+        console.log('RPC delete_user_account fallback, executing direct cascading deletion:', rpcErr.message);
+
+        // 2. Direct cascading cleanup of ALL user tables and content
+        await Promise.allSettled([
+          supabase.from('wallets').delete().eq('user_id', userId),
+          supabase.from('followers').delete().eq('follower_id', userId),
+          supabase.from('followers').delete().eq('following_id', userId),
+          supabase.from('reels').delete().eq('user_id', userId),
+          supabase.from('posts').delete().eq('user_id', userId),
+          supabase.from('direct_messages').delete().eq('sender_id', userId),
+          supabase.from('direct_messages').delete().eq('receiver_id', userId),
+          supabase.from('room_messages').delete().eq('user_id', userId),
+          supabase.from('streamer_daily_missions').delete().eq('user_id', userId),
+          supabase.from('support_tickets').delete().eq('user_id', userId),
+          supabase.from('withdrawal_requests').delete().eq('user_id', userId),
+          supabase.from('daily_checkins').delete().eq('user_id', userId),
+          supabase.from('agencies').delete().eq('owner_id', userId),
+        ]);
+
+        // 3. Delete Profile Record from Supabase
+        const { error: deleteErr } = await supabase.from('profiles').delete().eq('id', userId);
+        if (deleteErr) {
+          throw new Error('Error al borrar de Supabase: ' + deleteErr.message);
+        }
       }
-    } catch (e) {
-      console.log('Error', e);
+
+      // 4. Sign out and redirect to login
+      await supabase.auth.signOut();
+      router.replace('/auth/login' as any);
+      Alert.alert('Cuenta Eliminada ✅', 'Tu cuenta y todos tus datos fueron borrados permanentemente de Supabase.');
+    } catch (e: any) {
+      console.error('Error deleting account:', e);
+      Alert.alert('Error al eliminar', e.message || 'No se pudo eliminar la cuenta de la base de datos.');
+    } finally {
+      setLoadingProfile(false);
     }
   };
+
+  if (!profile) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Cargando perfil...</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }} edges={['top']}>
       <Cyber3DBackground />
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 130 }} showsVerticalScrollIndicator={false}>
-        <Text style={{ color: '#FFF', fontSize: 22, fontWeight: '900', marginBottom: 16 }}>Mi Perfil AURA LIVE 👤</Text>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 130, width: '100%', maxWidth: maxCardWidth, alignSelf: 'center' }} showsVerticalScrollIndicator={false}>
 
-        <Animated.View entering={FadeInDown.duration(800).springify()} style={{ position: 'relative', marginBottom: 20 }}>
-          {/* Banner Image */}
-          <View style={{ height: 160, borderRadius: 20, overflow: 'hidden', marginBottom: 40 }}>
-            <Image source={{ uri: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800' }} style={StyleSheet.absoluteFillObject} />
-            <LinearGradient colors={['transparent', 'rgba(10,10,16,0.95)']} style={StyleSheet.absoluteFillObject} />
-          </View>
-          
-          {/* Overlapping Avatar */}
-          <View style={{ position: 'absolute', top: 110, left: 16, flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
-            <View style={{ position: 'relative' }}>
+        <Animated.View entering={FadeInDown.duration(800).springify()} style={{ width: '100%', marginBottom: 20, alignItems: 'center' }}>
+          {/* Centered Avatar at Top (Sin recuadro/banner detrás) */}
+          <View style={{ alignSelf: 'center', alignItems: 'center', marginVertical: 12 }}>
+            <TouchableOpacity onPress={handleAvatarChange} activeOpacity={0.8} style={{ position: 'relative' }}>
               <View style={svipLevel > 0 ? { padding: 4, borderRadius: 55, backgroundColor: 'rgba(234,179,8,0.8)' } : { padding: 0 }}>
-                <Image source={{ uri: profile.avatar_url }} style={{ width: 90, height: 90, borderRadius: 45, borderWidth: 3, borderColor: '#0A0A10' }} />
+                <Image source={{ uri: profile.avatar_url }} style={{ width: 104, height: 104, borderRadius: 52, borderWidth: 3.5, borderColor: '#00E5FF' }} />
+                <View style={{ position: 'absolute', bottom: 2, right: 2, backgroundColor: '#00E5FF', borderRadius: 14, padding: 5, borderWidth: 1.5, borderColor: '#0A0A10' }}>
+                  <Camera size={13} color="#000" />
+                </View>
               </View>
               {svipLevel > 0 && (
-                <View style={{ position: 'absolute', bottom: -5, alignSelf: 'center', backgroundColor: '#EAB308', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, borderWidth: 1, borderColor: '#FEF08A' }}>
+                <View style={{ position: 'absolute', bottom: -6, alignSelf: 'center', backgroundColor: '#EAB308', paddingHorizontal: 10, paddingVertical: 2, borderRadius: 12, borderWidth: 1, borderColor: '#FEF08A' }}>
                   <Text style={{ color: '#000', fontWeight: '900', fontSize: 10, italic: 'italic' }}>SVIP {svipLevel}</Text>
                 </View>
               )}
-            </View>
-            <View style={{ paddingBottom: 10 }}>
-               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
-                 <Text style={{ color: '#F59E0B', fontSize: 18 }}>👑</Text>
-                 <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 22 }}>{profile.full_name}</Text>
-                 <TouchableOpacity onPress={() => { setNewName(profile.full_name); setEditNameModal(true); }}>
-                   <Text style={{ color: '#3B82F6', fontSize: 12, fontWeight: '800' }}>✏️</Text>
-                 </TouchableOpacity>
-               </View>
-               <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                 <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 8, gap: 4 }}>
-                   <Text style={{ color: '#3B82F6', fontSize: 10, fontWeight: 'bold' }}>♂ 38</Text>
-                 </View>
-                 <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,229,255,0.2)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 8, gap: 4, borderWidth: 1, borderColor: '#00E5FF' }}>
-                   <Text style={{ color: '#00E5FF', fontWeight: '900', fontSize: 10 }}>💎 {wealthLevel}</Text>
-                 </View>
-                 <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,0,127,0.2)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 8, gap: 4, borderWidth: 1, borderColor: '#FF007F' }}>
-                   <Text style={{ color: '#FF007F', fontWeight: '900', fontSize: 10 }}>❤️ {charismaLevel}</Text>
-                 </View>
-               </View>
-            </View>
+            </TouchableOpacity>
           </View>
-          
-          <View style={{ paddingHorizontal: 16, marginTop: 10 }}>
-             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+
+          {/* Centered User Info Below Avatar */}
+          <View style={{ alignItems: 'center', width: '100%', marginTop: 4 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center', marginBottom: 6 }}>
+              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 22, textAlign: 'center' }}>{profile.full_name}</Text>
+              <TouchableOpacity onPress={() => { setNewName(profile.full_name); setEditNameModal(true); }}>
+                <Text style={{ color: '#3B82F6', fontSize: 14, fontWeight: '800' }}>✏️</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 8 }}>
+              {(profile.status === 'verified' || profile.is_identity_verified) && (
+                <View style={{ backgroundColor: 'rgba(52,211,153,0.2)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12, borderWidth: 1, borderColor: '#34D399', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <CheckCircle2 size={12} color="#34D399" />
+                  <Text style={{ color: '#34D399', fontWeight: '900', fontSize: 10 }}>VERIFICADO ✅</Text>
+                </View>
+              )}
+
+              {cloverBalance > 0 && (
+                <View style={{ backgroundColor: 'rgba(34,197,94,0.15)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12, borderWidth: 1, borderColor: '#22C55E', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={{ color: '#22C55E', fontWeight: '900', fontSize: 10 }}>NUEVO 🍀</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, gap: 4 }}>
+                <Text style={{ color: profile?.gender === 'female' ? '#FF007F' : '#3B82F6', fontSize: 11, fontWeight: 'bold' }}>{profile?.gender === 'female' ? '♀️ Mujer' : '♂️ Hombre'}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,229,255,0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, gap: 4, borderWidth: 1, borderColor: 'rgba(0,229,255,0.4)' }}>
+                <Text style={{ color: '#00E5FF', fontWeight: '900', fontSize: 11 }}>💎 Riqueza Nv. {wealthLevel}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,0,127,0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, gap: 4, borderWidth: 1, borderColor: 'rgba(255,0,127,0.4)' }}>
+                <Text style={{ color: '#FF007F', fontWeight: '900', fontSize: 11 }}>❤️ Carisma Nv. {charismaLevel}</Text>
+              </View>
+            </View>
+
+            <View style={{ alignItems: 'center', gap: 4, marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text style={{ color: '#9CA3AF', fontSize: 12 }}>ID: {100042 + (profile?.id ? profile.id.charCodeAt(0) * 17 : 88)}</Text>
                 <TouchableOpacity><Text style={{ color: '#3B82F6', fontSize: 14 }}>⎘</Text></TouchableOpacity>
-             </View>
-             <Text style={{ color: '#D1D5DB', fontSize: 13, marginBottom: 16 }}>Ubicación: Santiago, Chile</Text>
+              </View>
+              <Text style={{ color: '#D1D5DB', fontSize: 12 }}>📍 Santiago, Chile</Text>
+            </View>
           </View>
         </Animated.View>
 
@@ -265,52 +501,38 @@ export default function UserProfileScreen() {
           {/* Stats Row */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 20, backgroundColor: 'rgba(255,255,255,0.05)', paddingVertical: 14, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
             <View style={{ alignItems: 'center', flex: 1 }}>
-              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 18 }}>126</Text>
+              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 18 }}>{followingCount}</Text>
               <Text style={{ color: '#9CA3AF', fontSize: 11 }}>Seguidos</Text>
             </View>
             <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.15)', height: '100%' }} />
             <View style={{ alignItems: 'center', flex: 1 }}>
-              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 18 }}>150</Text>
+              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 18 }}>{followersCount}</Text>
               <Text style={{ color: '#9CA3AF', fontSize: 11 }}>Seguidores</Text>
             </View>
             <View style={{ width: 1, backgroundColor: 'rgba(255,255,255,0.15)', height: '100%' }} />
             <View style={{ alignItems: 'center', flex: 1 }}>
-              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 18 }}>269</Text>
+              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 18 }}>{visitorsCount}</Text>
               <Text style={{ color: '#9CA3AF', fontSize: 11 }}>Visitantes</Text>
             </View>
           </View>
 
-          {/* Bio & Family Tabs */}
-          <View style={{ flexDirection: 'row', paddingHorizontal: 16, gap: 20, marginBottom: 16 }}>
+          {/* Bio Section */}
+          <View style={{ flexDirection: 'row', paddingHorizontal: 16, marginBottom: 16, justifyContent: 'space-between', alignItems: 'center' }}>
              <View>
                 <Text style={{ color: '#FFF', fontSize: 16, fontWeight: 'bold' }}>Sobre mí</Text>
                 <View style={{ height: 3, width: 20, backgroundColor: '#FF007F', marginTop: 4, borderRadius: 2 }} />
              </View>
-             <TouchableOpacity>
-                <Text style={{ color: '#9CA3AF', fontSize: 16, fontWeight: 'bold' }}>Muro de Honor</Text>
+             <TouchableOpacity onPress={() => { setNewBio(profile.bio || ''); setEditBioModal(true); }}>
+                <Text style={{ color: '#3B82F6', fontSize: 12, fontWeight: 'bold' }}>Editar ✏️</Text>
              </TouchableOpacity>
           </View>
           <View style={{ paddingHorizontal: 16, marginBottom: 24 }}>
-             <Text style={{ color: '#FFF', fontSize: 14, fontWeight: 'bold', marginBottom: 8 }}>Bio</Text>
-             <Text style={{ color: '#9CA3AF', fontSize: 13, lineHeight: 20 }}>Aprender otras culturas. Apasionado por la tecnología y la música.</Text>
+             <Text style={{ color: '#9CA3AF', fontSize: 13, lineHeight: 20, textAlign: 'center' }}>
+               {profile.bio || 'Sin descripción aún. Escribe algo sobre ti...'}
+             </Text>
           </View>
 
-          <View style={{ paddingHorizontal: 16, marginBottom: 24 }}>
-             <Text style={{ color: '#FFF', fontSize: 14, fontWeight: 'bold', marginBottom: 8 }}>Mi familia</Text>
-             <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', padding: 12, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', justifyContent: 'space-between' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                   <Image source={{ uri: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200' }} style={{ width: 40, height: 40, borderRadius: 20 }} />
-                   <View>
-                      <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 15 }}>Tropical Agency 🌴</Text>
-                   </View>
-                </View>
-                <View style={{ backgroundColor: '#F59E0B', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 }}>
-                   <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>👑 Top 14</Text>
-                </View>
-             </TouchableOpacity>
-          </View>
-
-          {/* Wallets 3D Gradient Cards */}
+          {/* Wallets Cards (Auras solo para Presentadoras Mujeres o Agencias Certificadas) */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20, gap: 12 }}>
             <TouchableOpacity onPress={() => router.push('/shop' as any)} style={{ flex: 1 }}>
               <LinearGradient
@@ -321,7 +543,7 @@ export default function UserProfileScreen() {
                   <View style={{ backgroundColor: 'rgba(245,158,11,0.2)', padding: 6, borderRadius: 16 }}><Text style={{ fontSize: 16 }}>🪙</Text></View>
                   <View>
                     <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 14 }}>{walletBalance}</Text>
-                    <Text style={{ color: '#F59E0B', fontSize: 10, fontWeight: '800' }}>Monedas</Text>
+                    <Text style={{ color: '#F59E0B', fontSize: 10, fontWeight: '800' }}>Monedas Virtuales</Text>
                   </View>
                 </View>
               </LinearGradient>
@@ -346,7 +568,7 @@ export default function UserProfileScreen() {
           {/* Daily Reward Chest Widget */}
           <View style={{ marginBottom: 20 }}>
             <DailyCheckinCard
-              userId="user-me-123"
+              userId={profile.id}
               onClaimSuccess={(claimedCoins) => setWalletBalance((prev) => prev + claimedCoins)}
             />
           </View>
@@ -371,13 +593,13 @@ export default function UserProfileScreen() {
               </LinearGradient>
             </TouchableOpacity>
             
-            <TouchableOpacity onPress={() => Alert.alert('Nivel de Riqueza', 'Próximamente')}>
+            <TouchableOpacity onPress={() => router.push('/wealth' as any)}>
               <LinearGradient
                 colors={['#1F2937', '#111827']}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: 'rgba(0,229,255,0.4)', padding: 14, borderRadius: 18 }}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Building2 size={20} color="#00E5FF" />
+                  <Sparkles size={20} color="#00E5FF" />
                   <View>
                     <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 13 }}>Nivel de Riqueza</Text>
                     <Text style={{ color: '#9CA3AF', fontSize: 10 }}>Sube de nivel enviando regalos</Text>
@@ -393,24 +615,28 @@ export default function UserProfileScreen() {
           {/* Photo Gallery Section */}
           <View style={{ marginBottom: 20 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 16 }}>Galería de Fotos 📸</Text>
-              <TouchableOpacity onPress={() => setAddPhotoModalVisible(true)} style={{ backgroundColor: 'rgba(255,0,127,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#FF007F' }}>
-                <Text style={{ color: '#FF007F', fontWeight: '800', fontSize: 10, textTransform: 'uppercase' }}>+ Agregar</Text>
+              <View>
+                <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 16 }}>Galería de Fotos 📸</Text>
+                <Text style={{ color: '#9CA3AF', fontSize: 10 }}>Máximo 6 fotos en total ({photoGallery.length + 1}/6)</Text>
+              </View>
+              <TouchableOpacity onPress={handleAddPhotoFromLibrary} style={{ backgroundColor: 'rgba(255,0,127,0.2)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: '#FF007F' }}>
+                <Text style={{ color: '#FF007F', fontWeight: '800', fontSize: 10, textTransform: 'uppercase' }}>+ Agregar Foto</Text>
               </TouchableOpacity>
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
               {photoGallery.map((photo, idx) => (
-                <View key={idx} style={{ position: 'relative' }}>
+                <View key={`photo-${idx}`} style={{ position: 'relative' }}>
                   <Image source={{ uri: photo }} style={{ width: 100, height: 120, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }} />
-                  <TouchableOpacity onPress={() => setPhotoGallery(prev => prev.filter((_, i) => i !== idx))} style={{ position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.6)', padding: 4, borderRadius: 10 }}>
+                  <TouchableOpacity onPress={() => handleDeletePhotoFromGallery(idx)} style={{ position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.7)', padding: 5, borderRadius: 10 }}>
                     <Trash2 size={12} color="#EF4444" />
                   </TouchableOpacity>
                 </View>
               ))}
               {photoGallery.length === 0 && (
-                <View style={{ width: 100, height: 120, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' }}>
+                <TouchableOpacity onPress={handleAddPhotoFromLibrary} style={{ width: 100, height: 120, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center' }}>
                   <ImageIcon size={24} color="#9CA3AF" />
-                </View>
+                  <Text style={{ color: '#9CA3AF', fontSize: 10, marginTop: 4 }}>Subir Foto</Text>
+                </TouchableOpacity>
               )}
             </ScrollView>
           </View>
@@ -418,6 +644,36 @@ export default function UserProfileScreen() {
           {/* Menu Navigation Items */}
           <View style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 24, padding: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', marginBottom: 20, gap: 8 }}>
             
+            {/* Card de Verificación Facial (Solo visible si NO está verificado) */}
+            {!profile?.is_identity_verified && profile?.status !== 'verified' && (
+              <TouchableOpacity
+                onPress={handleOpenBiometricsModal}
+                disabled={scanningBiometrics}
+              >
+                <LinearGradient
+                  colors={['#831843', '#1F2937']}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 16, borderWidth: 1, borderColor: '#FF007F' }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                    <ScanFace size={20} color="#FF007F" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 13 }}>
+                        Verificación Facial (+50 Monedas) 📸
+                      </Text>
+                      <Text style={{ color: '#9CA3AF', fontSize: 10 }}>
+                        Escanear rostro en vivo para ganar +50 monedas
+                      </Text>
+                    </View>
+                  </View>
+                  {scanningBiometrics ? (
+                    <ActivityIndicator color="#00E5FF" size="small" />
+                  ) : (
+                    <ChevronRight size={16} color="#FF007F" />
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+
             {!isAgency && (
               <TouchableOpacity
                 onPress={() => {
@@ -442,19 +698,6 @@ export default function UserProfileScreen() {
                 </LinearGradient>
               </TouchableOpacity>
             )}
-
-            <TouchableOpacity onPress={() => router.push('/family/create' as any)}>
-              <LinearGradient
-                colors={['#312E81', '#1F2937']}
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(129,140,248,0.4)' }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Users size={18} color="#818CF8" />
-                  <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 13 }}>Mi Familia (Gremio) 🛡️</Text>
-                </View>
-                <ChevronRight size={16} color="#818CF8" />
-              </LinearGradient>
-            </TouchableOpacity>
 
             {(isFemaleStreamer || isAgency) && (
               <TouchableOpacity onPress={() => router.push('/streamer/dashboard' as any)}>
@@ -485,24 +728,34 @@ export default function UserProfileScreen() {
                 </LinearGradient>
               </TouchableOpacity>
             )}
-
-            <TouchableOpacity onPress={() => router.push('/admin/dashboard' as any)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <ShieldCheck size={18} color="#00E5FF" />
-                <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 13 }}>Panel SuperAdmin Master</Text>
-              </View>
-              <ChevronRight size={16} color="#9CA3AF" />
-            </TouchableOpacity>
+            {profile?.is_superadmin && (
+              <TouchableOpacity onPress={() => router.push('/admin/dashboard' as any)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <ShieldCheck size={18} color="#00E5FF" />
+                  <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 13 }}>Panel SuperAdmin Master</Text>
+                </View>
+                <ChevronRight size={16} color="#9CA3AF" />
+              </TouchableOpacity>
+            )}
 
           </View>
 
           {/* Logout Button */}
           <TouchableOpacity
-            onPress={handleLogout}
-            style={{ paddingVertical: 14, borderRadius: 24, backgroundColor: 'rgba(239,68,68,0.15)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 20 }}
+            onPress={handleSignOut}
+            style={{ paddingVertical: 14, borderRadius: 24, backgroundColor: 'rgba(239,68,68,0.15)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12 }}
           >
             <LogOut size={18} color="#EF4444" />
-            <Text style={{ color: '#F87171', fontWeight: '900', fontSize: 13, textTransform: 'uppercase' }}>Cerrar Sesión</Text>
+            <Text style={{ color: '#EF4444', fontWeight: '800', fontSize: 16 }}>Cerrar Sesión</Text>
+          </TouchableOpacity>
+
+          {/* Delete Account Button */}
+          <TouchableOpacity
+            onPress={handleDeleteAccount}
+            style={{ paddingVertical: 12, borderRadius: 24, backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 20 }}
+          >
+            <Trash2 size={16} color="#EF4444" />
+            <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 13 }}>Eliminar Cuenta Definitivamente 🗑️</Text>
           </TouchableOpacity>
         </Animated.View>
       </ScrollView>
@@ -567,7 +820,7 @@ export default function UserProfileScreen() {
               <TouchableOpacity onPress={() => setEditBirthDateModal(false)} style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.1)', paddingVertical: 12, borderRadius: 20, alignItems: 'center' }}>
                 <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 12, textTransform: 'uppercase' }}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleUpdateBirthDate} style={{ flex: 1, backgroundColor: '#3B82F6', paddingVertical: 12, borderRadius: 20, alignItems: 'center' }}>
+              <TouchableOpacity onPress={handleSaveBirthDate} style={{ flex: 1, backgroundColor: '#3B82F6', paddingVertical: 12, borderRadius: 20, alignItems: 'center' }}>
                 <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 12, textTransform: 'uppercase' }}>Guardar</Text>
               </TouchableOpacity>
             </View>
@@ -575,29 +828,7 @@ export default function UserProfileScreen() {
         </View>
       </Modal>
 
-      {/* Modal para Agregar Foto a Galería */}
-      <Modal visible={addPhotoModalVisible} transparent animationType="fade">
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.85)', padding: 20 }}>
-          <LinearGradient colors={['#1F2937', '#000000']} style={{ borderWidth: 1, borderColor: '#FF007F', padding: 20, borderRadius: 24, width: '100%', maxWidth: 340 }}>
-            <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 17, marginBottom: 14, textAlign: 'center' }}>Subir Nueva Foto 📸</Text>
-            <TextInput
-              value={newPhotoUrl}
-              onChangeText={setNewPhotoUrl}
-              placeholder="URL de la imagen (ej: https://...)"
-              placeholderTextColor="#6B7280"
-              style={{ backgroundColor: 'rgba(0,0,0,0.6)', color: '#FFF', fontWeight: '500', fontSize: 12, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: '#FF007F', marginBottom: 14 }}
-            />
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <TouchableOpacity onPress={() => setAddPhotoModalVisible(false)} style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.1)', paddingVertical: 12, borderRadius: 20, alignItems: 'center' }}>
-                <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 12, textTransform: 'uppercase' }}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleAddPhotoToGallery} style={{ flex: 1, backgroundColor: '#FF007F', paddingVertical: 12, borderRadius: 20, alignItems: 'center' }}>
-                <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 12, textTransform: 'uppercase' }}>Guardar</Text>
-              </TouchableOpacity>
-            </View>
-          </LinearGradient>
-        </View>
-      </Modal>
+
 
       {/* Modal para Editar Nombre */}
       <Modal visible={editNameModal} transparent animationType="fade">
@@ -616,13 +847,114 @@ export default function UserProfileScreen() {
               <TouchableOpacity onPress={() => setEditNameModal(false)} style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.1)', paddingVertical: 12, borderRadius: 20, alignItems: 'center' }}>
                 <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 12, textTransform: 'uppercase' }}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleUpdateName} style={{ flex: 1, backgroundColor: '#3B82F6', paddingVertical: 12, borderRadius: 20, alignItems: 'center' }}>
+              <TouchableOpacity onPress={handleSaveName} style={{ flex: 1, backgroundColor: '#3B82F6', paddingVertical: 12, borderRadius: 20, alignItems: 'center' }}>
                 <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 12, textTransform: 'uppercase' }}>Guardar</Text>
               </TouchableOpacity>
             </View>
           </LinearGradient>
         </View>
       </Modal>
+      {/* Modal para Editar Bio */}
+      <Modal visible={editBioModal} transparent animationType="fade">
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.85)', padding: 20 }}>
+          <LinearGradient colors={['#1F2937', '#000000']} style={{ borderWidth: 1, borderColor: '#FF007F', padding: 20, borderRadius: 24, width: '100%', maxWidth: 340 }}>
+            <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 17, marginBottom: 14, textAlign: 'center' }}>Sobre mí 📝</Text>
+            <TextInput
+              value={newBio}
+              onChangeText={setNewBio}
+              placeholder="Escribe algo sobre ti..."
+              placeholderTextColor="#6B7280"
+              maxLength={300}
+              multiline
+              numberOfLines={4}
+              style={{ backgroundColor: 'rgba(0,0,0,0.6)', color: '#FFF', fontWeight: '500', fontSize: 14, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: '#FF007F', marginBottom: 14, minHeight: 80, textAlignVertical: 'top' }}
+            />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity onPress={() => setEditBioModal(false)} style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.1)', paddingVertical: 12, borderRadius: 20, alignItems: 'center' }}>
+                <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 12, textTransform: 'uppercase' }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleSaveBio} style={{ flex: 1, backgroundColor: '#FF007F', paddingVertical: 12, borderRadius: 20, alignItems: 'center' }}>
+                <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 12, textTransform: 'uppercase' }}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
+        </View>
+      </Modal>
+
+      {/* Modal de Verificación Facial 3D con Cámara */}
+      <Modal visible={livenessModalVisible} animationType="slide" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <LinearGradient colors={['#1F2937', '#0A0A10']} style={{ width: '100%', maxWidth: 360, borderRadius: 28, padding: 20, borderWidth: 1.5, borderColor: '#FF007F', alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', alignItems: 'center', marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <ScanFace size={24} color="#00E5FF" />
+                <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 16 }}>Verificación Facial</Text>
+              </View>
+              <TouchableOpacity onPress={() => setLivenessModalVisible(false)}>
+                <X size={20} color="#9CA3AF" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ color: '#9CA3AF', fontSize: 12, textAlign: 'center', marginBottom: 16, lineHeight: 18 }}>
+              Centra tu rostro en el círculo para analizar tu identidad y género (Hombre ♂️ / Mujer ♀️). ¡Recompensa: +50 Monedas e Insignia VERIFICADO!
+            </Text>
+
+            {/* Visor de Cámara Frontal */}
+            <View style={{ width: 200, height: 200, borderRadius: 100, overflow: 'hidden', borderWidth: 3, borderColor: scanningBiometrics ? '#00E5FF' : '#FF007F', marginBottom: 20, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1F2937', position: 'relative' }}>
+              {cameraPermission?.granted ? (
+                <CameraView style={StyleSheet.absoluteFillObject} facing="front" />
+              ) : (
+                <View style={{ alignItems: 'center', padding: 10 }}>
+                  <CameraIcon size={32} color="#9CA3AF" />
+                  <Text style={{ color: '#9CA3AF', fontSize: 11, textAlign: 'center', marginTop: 8 }}>Permiso de Cámara requerido</Text>
+                </View>
+              )}
+
+              {/* Línea Láser Animada */}
+              {scanningBiometrics && (
+                <View style={{ position: 'absolute', top: '35%', left: 0, right: 0, height: 4, backgroundColor: '#00E5FF', shadowColor: '#00E5FF', shadowOpacity: 1, shadowRadius: 10 }} />
+              )}
+            </View>
+
+            {!cameraPermission?.granted ? (
+              <TouchableOpacity onPress={requestCameraPermission} style={{ width: '100%', backgroundColor: '#00E5FF', paddingVertical: 14, borderRadius: 20, alignItems: 'center', marginBottom: 10 }}>
+                <Text style={{ color: '#000', fontWeight: '900', fontSize: 14 }}>Permitir Acceso a Cámara 📸</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={handleExecuteBiometricsScan}
+                disabled={scanningBiometrics}
+                style={{ width: '100%', borderRadius: 20, overflow: 'hidden' }}
+              >
+                <LinearGradient colors={scanningBiometrics ? ['#374151', '#1F2937'] : ['#FF007F', '#7C3AED']} style={{ paddingVertical: 14, alignItems: 'center' }}>
+                  {scanningBiometrics ? (
+                    <ActivityIndicator color="#00E5FF" />
+                  ) : (
+                    <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 14, textTransform: 'uppercase' }}>Iniciar Verificación Facial 📸</Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+          </LinearGradient>
+        </View>
+      </Modal>
+
+      <AuraAlert
+        visible={!!alertConfig}
+        title={alertConfig?.title || ''}
+        message={alertConfig?.message || ''}
+        type={alertConfig?.type}
+        confirmText={alertConfig?.confirmText}
+        cancelText={alertConfig?.cancelText}
+        onConfirm={() => {
+          alertConfig?.onConfirm();
+          setAlertConfig(null);
+        }}
+        onCancel={alertConfig?.onCancel ? () => {
+          alertConfig.onCancel!();
+          setAlertConfig(null);
+        } : undefined}
+      />
     </SafeAreaView>
   );
 }

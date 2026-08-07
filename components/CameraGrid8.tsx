@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 import { CameraView } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Mic, MicOff, VideoOff } from 'lucide-react-native';
+import { Mic, MicOff, VideoOff, UserPlus } from 'lucide-react-native';
 
 export interface ParticipantItem {
   id: string;
@@ -11,6 +11,7 @@ export interface ParticipantItem {
   isHost?: boolean;
   isMuted?: boolean;
   isVideoFrozen?: boolean;
+  isSeatEmpty?: boolean;
 }
 
 interface CameraGrid8Props {
@@ -19,6 +20,7 @@ interface CameraGrid8Props {
   micActive: boolean;
   onToggleMute: (id: string) => void;
   onSelectUser?: (user: { id: string; name: string; avatarUrl: string }) => void;
+  onOccupySeat?: (seatId: string) => void;
 }
 
 export const CameraGrid8: React.FC<CameraGrid8Props> = ({
@@ -27,13 +29,47 @@ export const CameraGrid8: React.FC<CameraGrid8Props> = ({
   micActive,
   onToggleMute,
   onSelectUser,
+  onOccupySeat,
 }) => {
   const { width: windowWidth } = useWindowDimensions();
 
+  // Guarantee 8 slots exist
+  const slots: ParticipantItem[] = Array.from({ length: 8 }).map((_, idx) => {
+    return participants[idx] || {
+      id: `seat-${idx}`,
+      name: `Puesto #${idx + 1} Libre`,
+      avatarUrl: '',
+      isSeatEmpty: true,
+    };
+  });
+
   return (
     <View style={styles.gridContainer}>
-      {participants.slice(0, 8).map((p) => {
+      {slots.map((p, idx) => {
         const isHostSlot = p.isHost;
+        const isVacant = p.isSeatEmpty;
+
+        if (isVacant) {
+          return (
+            <TouchableOpacity
+              key={p.id || `empty-${idx}`}
+              activeOpacity={0.8}
+              onPress={() => onOccupySeat && onOccupySeat(p.id)}
+              style={{ width: '48%', aspectRatio: 1.25, marginBottom: 6 }}
+            >
+              <View style={styles.emptySlotBorder}>
+                <View style={styles.emptySlotInner}>
+                  <View style={styles.plusIconCircle}>
+                    <UserPlus size={18} color="#FF007F" />
+                  </View>
+                  <Text style={styles.emptySeatTitle}>Puesto #{idx + 1}</Text>
+                  <Text style={styles.emptySeatSubtext}>Libre 🎙️</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          );
+        }
+
         return (
           <TouchableOpacity
             key={p.id}
@@ -57,11 +93,11 @@ export const CameraGrid8: React.FC<CameraGrid8Props> = ({
                   </View>
                 ) : (
                   <View style={styles.imageContainer}>
-                    <Image source={{ uri: p.avatarUrl }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+                    <Image source={{ uri: p.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400' }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
                     <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent']} style={styles.topGradientOverlay} />
                     <View style={styles.liveBadge}>
                       <View style={styles.liveDot} />
-                      <Text style={styles.liveBadgeText}>VIVO</Text>
+                      <Text style={styles.liveBadgeText}>{isHostSlot ? 'HOST' : 'VIVO'}</Text>
                     </View>
                   </View>
                 )}
@@ -83,7 +119,7 @@ export const CameraGrid8: React.FC<CameraGrid8Props> = ({
 
                 {/* Bottom Label Bar */}
                 <View style={styles.participantLabelBar}>
-                  <Image source={{ uri: p.avatarUrl }} style={styles.miniAvatar} />
+                  {p.avatarUrl ? <Image source={{ uri: p.avatarUrl }} style={styles.miniAvatar} /> : null}
                   <Text style={styles.participantName} numberOfLines={1}>{p.name}</Text>
                   {p.isMuted ? <MicOff size={9} color="#FF007F" /> : <Mic size={9} color="#00E5FF" />}
                 </View>
@@ -100,69 +136,93 @@ const styles = StyleSheet.create({
   gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 4,
+    justify: 'space-between',
+    width: '100%',
   },
   gradientBorder: {
     width: '100%',
     height: '100%',
-    borderRadius: 14,
-    padding: 1.5,
+    borderRadius: 16,
+    padding: 2,
   },
   videoSlotInner: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#0D1117',
-    borderRadius: 12,
+    flex: 1,
+    backgroundColor: '#0F0F1A',
+    borderRadius: 14,
     overflow: 'hidden',
     position: 'relative',
   },
-  frozenBox: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#111827',
-    justifyContent: 'center',
-    alignItems: 'center',
+  emptySlotBorder: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 0, 127, 0.35)',
+    borderStyle: 'dashed',
+    backgroundColor: 'rgba(15, 15, 26, 0.6)',
+    padding: 2,
   },
-  frozenText: {
-    color: '#FF007F',
-    fontSize: 8,
+  emptySlotInner: {
+    flex: 1,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 4,
+  },
+  plusIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 0, 127, 0.15)',
+    borderWidth: 1,
+    borderColor: '#FF007F',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  emptySeatTitle: {
+    color: '#FFFFFF',
     fontWeight: '800',
-    marginTop: 2,
+    fontSize: 10,
+  },
+  emptySeatSubtext: {
+    color: '#FF007F',
+    fontWeight: '700',
+    fontSize: 8,
+    marginTop: 1,
   },
   imageContainer: {
     width: '100%',
     height: '100%',
     position: 'relative',
-    overflow: 'hidden',
   },
   topGradientOverlay: {
-    height: 24,
-    width: '100%',
     position: 'absolute',
     top: 0,
+    left: 0,
+    right: 0,
+    height: 24,
   },
   liveBadge: {
     position: 'absolute',
     top: 4,
     left: 4,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    paddingHorizontal: 4,
+    backgroundColor: 'rgba(239, 68, 68, 0.9)',
+    paddingHorizontal: 5,
     paddingVertical: 1.5,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#22C55E',
+    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 3,
   },
   liveDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#22C55E',
-    marginRight: 3,
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#FFF',
   },
   liveBadgeText: {
-    color: '#4ADE80',
+    color: '#FFF',
     fontSize: 7,
     fontWeight: '900',
   },
@@ -171,26 +231,23 @@ const styles = StyleSheet.create({
     top: 4,
     right: 4,
     paddingHorizontal: 5,
-    paddingVertical: 2,
+    paddingVertical: 1.5,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#FFF',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
   },
   participantLabelBar: {
     position: 'absolute',
-    bottom: 3,
-    left: 3,
-    right: 3,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 6,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 3,
   },
   miniAvatar: {
     width: 12,
@@ -198,12 +255,23 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#00E5FF',
-    marginRight: 3,
   },
   participantName: {
-    color: '#FFFFFF',
+    color: '#FFF',
+    fontSize: 8,
+    fontWeight: '700',
+    flex: 1,
+  },
+  frozenBox: {
+    flex: 1,
+    backgroundColor: '#1E1B4B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  frozenText: {
+    color: '#FF007F',
     fontSize: 8,
     fontWeight: '800',
-    flex: 1,
+    marginTop: 2,
   },
 });

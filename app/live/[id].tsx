@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "../../hooks/useTheme";
+import { supabase } from "../../lib/supabase";
 import { ZegoVideoEngine } from "../../components/ZegoVideoEngine";
 import { LiveChat, ChatItem } from "../../components/LiveChat";
 import { CloverProgress } from "../../components/CloverProgress";
@@ -145,11 +146,11 @@ export default function LiveRoomScreen() {
   const [senderCoins, setSenderCoins] = useState(1500);
 
   const [unlockedLeaves, setUnlockedLeaves] = useState(3);
-  const [accumulatedCoins, setAccumulatedCoins] = useState(15000);
+  const [accumulatedCoins, setAccumulatedCoins] = useState(0);
   const [streamMinutes, setStreamMinutes] = useState(180);
 
   const [alertConfig, setAlertConfig] = useState<AuraAlertProps | null>(null);
-  const [currentEntrance, setCurrentEntrance] = useState<{username: string, isVip: boolean} | null>(null);
+  const [currentEntrance, setCurrentEntrance] = useState<{username: string, isVip: boolean, svipLevel?: number, wealthLevel?: number} | null>(null);
   const [chatVisible, setChatVisible] = useState(false);
   const [giftModalVisible, setGiftModalVisible] = useState(false);
   const [filtersModalVisible, setFiltersModalVisible] = useState(false);
@@ -164,23 +165,32 @@ export default function LiveRoomScreen() {
     [],
   );
 
+  const [hostProfile, setHostProfile] = useState<{ full_name: string; avatar_url: string; gender?: string; is_agency?: boolean } | null>(null);
+
   useEffect(() => {
-    // Simulamos la entrada de un usuario estándar a los 3 segundos
-    const timer1 = setTimeout(() => {
-      setCurrentEntrance({ username: "María92", isVip: false });
-      handleSendMessage("María92 se ha unido a la sala (A través de Compartir Enlace)", false, "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400", "Sistema Aura", false);
-    }, 3000);
-
-    // Simulamos la entrada de un VIP a los 10 segundos
-    const timer2 = setTimeout(() => {
-      setCurrentEntrance({ username: "Carlos VIP", isVip: true });
-      handleSendMessage("Carlos VIP se ha unido a la sala (Entrada Destacada)", false, "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400", "Sistema Aura", true);
-    }, 10000);
-
-    return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-    };
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from('profiles').select('*').eq('id', user.id).single().then(({ data }) => {
+          if (data) {
+            setHostProfile({
+              full_name: data.full_name,
+              avatar_url: data.avatar_url,
+              gender: data.gender,
+              is_agency: data.is_agency,
+            });
+            setCurrentEntrance({
+              username: data.full_name || 'Usuario Aura',
+              isVip: (data.svip_level || 0) > 0 || (data.wealth_level || 0) > 0,
+              svipLevel: data.svip_level || 0,
+              wealthLevel: data.wealth_level || 0,
+            });
+          }
+        });
+        supabase.from('wallets').select('coin_balance').eq('user_id', user.id).single().then(({ data }) => {
+          if (data) setSenderCoins(data.coin_balance || 0);
+        });
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -209,26 +219,7 @@ export default function LiveRoomScreen() {
     return () => clearInterval(interval);
   }, [faceDetected, isHost, router]);
 
-  const [messages, setMessages] = useState<ChatItem[]>([
-    {
-      id: "1",
-      senderName: "Carlos VIP",
-      senderAvatar:
-        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400",
-      message: "¡Hola a todos! 🔥",
-      isVip: true,
-      timestamp: "17:30",
-    },
-    {
-      id: "2",
-      senderName: "Elena Neo",
-      senderAvatar:
-        "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=400",
-      message: "Excelente video 🎉",
-      isVip: false,
-      timestamp: "17:31",
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatItem[]>([]);
 
   const handleSendMessage = (
     text: string,
@@ -308,6 +299,8 @@ export default function LiveRoomScreen() {
       <VipEntranceOverlay
         username={currentEntrance?.username || ""}
         isVip={currentEntrance?.isVip}
+        svipLevel={currentEntrance?.svipLevel}
+        wealthLevel={currentEntrance?.wealthLevel}
         isVisible={!!currentEntrance}
         onFinished={() => setCurrentEntrance(null)}
       />
@@ -329,29 +322,31 @@ export default function LiveRoomScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Image
             source={{
-              uri: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400",
+              uri: hostProfile?.avatar_url || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400",
             }}
             style={{ width: 32, height: 32, borderRadius: 16, borderWidth: 1.5, borderColor: '#FF007F' }}
           />
           <View>
             <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 12 }}>
-              Aura Presentadora 👑
+              {hostProfile?.full_name || "Aura Host ✨"}
             </Text>
             <Text style={{ color: '#00E5FF', fontSize: 9, fontWeight: '800' }}>
-              ID: {id || "101"} • 1.4K Espectadores
+              ID: {id || "101"} • En Vivo 📡
             </Text>
           </View>
         </View>
 
-        {/* Right side stats: Auras Recibidas */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(168,85,247,0.2)', borderWidth: 1.5, borderColor: '#A855F7', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16, gap: 4 }}>
-            <Text style={{ fontSize: 13 }}>🔮</Text>
-            <Text style={{ color: '#C084FC', fontWeight: '900', fontSize: 11 }}>
-              {(accumulatedCoins >= 1000 ? (accumulatedCoins / 1000).toFixed(1) + 'K' : accumulatedCoins)} Auras
-            </Text>
+        {/* Right side stats: Auras Recibidas (Solo Presentadoras Mujeres o Agencias Certificadas) */}
+        {(hostProfile?.gender === 'female' || hostProfile?.is_agency) && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(168,85,247,0.2)', borderWidth: 1.5, borderColor: '#A855F7', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16, gap: 4 }}>
+              <Text style={{ fontSize: 13 }}>🔮</Text>
+              <Text style={{ color: '#C084FC', fontWeight: '900', fontSize: 11 }}>
+                {(accumulatedCoins >= 1000 ? (accumulatedCoins / 1000).toFixed(1) + 'K' : accumulatedCoins)} Auras
+              </Text>
+            </View>
           </View>
-        </View>
+        )}
       </LinearGradient>
 
       <ScrollView

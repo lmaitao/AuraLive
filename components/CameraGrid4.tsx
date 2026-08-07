@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 import { CameraView } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Mic, MicOff, VideoOff } from 'lucide-react-native';
+import { Mic, MicOff, VideoOff, Plus, UserPlus } from 'lucide-react-native';
 
 export interface ParticipantItem {
   id: string;
@@ -11,6 +11,7 @@ export interface ParticipantItem {
   isHost?: boolean;
   isMuted?: boolean;
   isVideoFrozen?: boolean;
+  isSeatEmpty?: boolean;
 }
 
 interface CameraGrid4Props {
@@ -19,6 +20,7 @@ interface CameraGrid4Props {
   micActive: boolean;
   onToggleMute: (id: string) => void;
   onSelectUser?: (user: { id: string; name: string; avatarUrl: string }) => void;
+  onOccupySeat?: (seatId: string) => void;
 }
 
 export const CameraGrid4: React.FC<CameraGrid4Props> = ({
@@ -27,14 +29,47 @@ export const CameraGrid4: React.FC<CameraGrid4Props> = ({
   micActive,
   onToggleMute,
   onSelectUser,
+  onOccupySeat,
 }) => {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const isCompactHeight = windowHeight < 720;
+
+  // Guarantee 4 slots exist
+  const slots: ParticipantItem[] = Array.from({ length: 4 }).map((_, idx) => {
+    return participants[idx] || {
+      id: `seat-${idx}`,
+      name: `Puesto #${idx + 1} Libre`,
+      avatarUrl: '',
+      isSeatEmpty: true,
+    };
+  });
 
   return (
     <View style={styles.gridContainer}>
-      {participants.slice(0, 4).map((p) => {
+      {slots.map((p, idx) => {
         const isHostSlot = p.isHost;
+        const isVacant = p.isSeatEmpty;
+
+        if (isVacant) {
+          return (
+            <TouchableOpacity
+              key={p.id || `empty-${idx}`}
+              activeOpacity={0.8}
+              onPress={() => onOccupySeat && onOccupySeat(p.id)}
+              style={{ width: '48%', aspectRatio: 1, marginBottom: 8 }}
+            >
+              <View style={styles.emptySlotBorder}>
+                <View style={styles.emptySlotInner}>
+                  <View style={styles.plusIconCircle}>
+                    <UserPlus size={22} color="#00E5FF" />
+                  </View>
+                  <Text style={styles.emptySeatTitle}>Puesto #{idx + 1}</Text>
+                  <Text style={styles.emptySeatSubtext}>Toca para Subir 🎙️</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          );
+        }
+
         return (
           <TouchableOpacity
             key={p.id}
@@ -58,11 +93,11 @@ export const CameraGrid4: React.FC<CameraGrid4Props> = ({
                   </View>
                 ) : (
                   <View style={styles.imageContainer}>
-                    <Image source={{ uri: p.avatarUrl }} style={styles.avatarImage} resizeMode="cover" />
+                    <Image source={{ uri: p.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400' }} style={styles.avatarImage} resizeMode="cover" />
                     <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent']} style={styles.topGradientOverlay} />
                     <View style={styles.liveBadge}>
                       <View style={styles.liveDot} />
-                      <Text style={styles.liveBadgeText}>EN VIVO</Text>
+                      <Text style={styles.liveBadgeText}>{isHostSlot ? 'HOST' : 'EN VIVO'}</Text>
                     </View>
                   </View>
                 )}
@@ -84,7 +119,7 @@ export const CameraGrid4: React.FC<CameraGrid4Props> = ({
 
                 {/* Bottom Label Bar */}
                 <View style={styles.participantLabelBar}>
-                  <Image source={{ uri: p.avatarUrl }} style={styles.miniAvatar} />
+                  {p.avatarUrl ? <Image source={{ uri: p.avatarUrl }} style={styles.miniAvatar} /> : null}
                   <Text style={styles.participantName} numberOfLines={1}>{p.name}</Text>
                   {p.isMuted ? <MicOff size={10} color="#FF007F" /> : <Mic size={10} color="#00E5FF" />}
                 </View>
@@ -101,8 +136,8 @@ const styles = StyleSheet.create({
   gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 4,
+    justify: 'space-between',
+    width: '100%',
   },
   gradientBorder: {
     width: '100%',
@@ -111,69 +146,87 @@ const styles = StyleSheet.create({
     padding: 2,
   },
   videoSlotInner: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#0D1117',
+    flex: 1,
+    backgroundColor: '#0F0F1A',
     borderRadius: 16,
     overflow: 'hidden',
     position: 'relative',
   },
-  frozenBox: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#111827',
-    justifyContent: 'center',
-    alignItems: 'center',
+  emptySlotBorder: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 229, 255, 0.35)',
+    borderStyle: 'dashed',
+    backgroundColor: 'rgba(15, 15, 26, 0.6)',
+    padding: 2,
   },
-  frozenText: {
-    color: '#FF007F',
-    fontSize: 9,
+  emptySlotInner: {
+    flex: 1,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 8,
+  },
+  plusIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: '#00E5FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  emptySeatTitle: {
+    color: '#FFFFFF',
     fontWeight: '800',
+    fontSize: 11,
+  },
+  emptySeatSubtext: {
+    color: '#00E5FF',
+    fontWeight: '700',
+    fontSize: 9,
     marginTop: 2,
   },
   imageContainer: {
     width: '100%',
     height: '100%',
     position: 'relative',
-    overflow: 'hidden',
-    backgroundColor: '#0D1117',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   avatarImage: {
     width: '100%',
     height: '100%',
+  },
+  topGradientOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
-  },
-  topGradientOverlay: {
+    right: 0,
     height: 30,
-    width: '100%',
-    position: 'absolute',
-    top: 0,
   },
   liveBadge: {
     position: 'absolute',
     top: 6,
     left: 6,
-    backgroundColor: 'rgba(0,0,0,0.8)',
+    backgroundColor: 'rgba(239, 68, 68, 0.9)',
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#22C55E',
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
   },
   liveDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: '#22C55E',
-    marginRight: 4,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#FFF',
   },
   liveBadgeText: {
-    color: '#4ADE80',
+    color: '#FFF',
     fontSize: 8,
     fontWeight: '900',
   },
@@ -181,27 +234,24 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 6,
     right: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#FFF',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
   },
   participantLabelBar: {
     position: 'absolute',
-    bottom: 4,
-    left: 4,
-    right: 4,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 8,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 4,
   },
   miniAvatar: {
     width: 14,
@@ -209,12 +259,23 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     borderWidth: 1,
     borderColor: '#00E5FF',
-    marginRight: 4,
   },
   participantName: {
-    color: '#FFFFFF',
+    color: '#FFF',
+    fontSize: 9,
+    fontWeight: '700',
+    flex: 1,
+  },
+  frozenBox: {
+    flex: 1,
+    backgroundColor: '#1E1B4B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  frozenText: {
+    color: '#FF007F',
     fontSize: 9,
     fontWeight: '800',
-    flex: 1,
+    marginTop: 4,
   },
 });

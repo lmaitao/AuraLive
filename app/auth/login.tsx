@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Image, Modal, ActivityIndicator, ScrollView, Platform, Alert, KeyboardAvoidingView, StyleSheet, useWindowDimensions } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
@@ -25,12 +25,19 @@ WebBrowser.maybeCompleteAuthSession();
 export default function LoginAuthScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const params = useLocalSearchParams();
   const { width } = useWindowDimensions();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   const cardOpacity = useSharedValue(0);
   const cardTranslateY = useSharedValue(30);
   const orbScale = useSharedValue(1);
+
+  useEffect(() => {
+    if (params.onboarding === 'true') {
+      setRequiresOnboarding(true);
+    }
+  }, [params.onboarding]);
 
   useEffect(() => {
     cardOpacity.value = withTiming(1, { duration: 800 });
@@ -41,6 +48,16 @@ export default function LoginAuthScreen() {
       -1,
       true
     );
+
+    // Verificar si el usuario ya tiene sesión guardada
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setLoading(true);
+        setTimeout(() => {
+          router.replace('/(tabs)/feed' as any);
+        }, 300);
+      }
+    });
   }, []);
 
   const animatedCardStyle = useAnimatedStyle(() => ({
@@ -66,6 +83,7 @@ export default function LoginAuthScreen() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [requiresOnboarding, setRequiresOnboarding] = useState(false);
 
   // Forgot Password State
   const [forgotStep, setForgotStep] = useState<'request' | 'update'>('request');
@@ -88,6 +106,15 @@ export default function LoginAuthScreen() {
     setErrorMessage(null);
     setLoading(true);
     try {
+      // 0. Si ya hay una sesión guardada, mantener spinner "Conectando..." y entrar
+      const { data: { session: existingSession } } = await supabase.auth.getSession();
+      if (existingSession?.user) {
+        setTimeout(() => {
+          router.replace('/(tabs)/feed' as any);
+        }, 400);
+        return;
+      }
+
       const redirectUrl = AuthSession.makeRedirectUri({
         scheme: 'auralive',
         path: 'auth/callback',
@@ -105,33 +132,132 @@ export default function LoginAuthScreen() {
 
       if (data?.url) {
         const res = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+
         if (res.type === 'success') {
           const { url } = res;
-          const { params, errorCode } = QueryParams.getQueryParams(url);
-          if (errorCode) throw new Error(errorCode);
+
+          // Extraer parámetros de Query string (?) y Hash fragment (#)
+          const { params } = QueryParams.getQueryParams(url);
           
-          if (params.access_token && params.refresh_token) {
+          let code = params.code;
+          let access_token = params.access_token;
+          let refresh_token = params.refresh_token;
+
+          // Fallback: extraer de hash fragment si la URL contiene #
+          if (!code && !access_token && url.includes('#')) {
+            try {
+              const hashPart = url.split('#')[1] || '';
+              const hashParams = new URLSearchParams(hashPart);
+              code = hashParams.get('code') || undefined;
+              access_token = hashParams.get('access_token') || undefined;
+              refresh_token = hashParams.get('refresh_token') || undefined;
+            } catch (_) {}
+          }
+
+          // 1. Intercambiar código PKCE por Sesión si se recibió código
+          if (code) {
+            const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+            if (exchangeError) throw exchangeError;
+          } 
+          // 2. Establecer sesión manualmente si se recibieron tokens implícitos
+          else if (access_token && refresh_token) {
             const { error: sessionError } = await supabase.auth.setSession({
-              access_token: params.access_token,
-              refresh_token: params.refresh_token,
+              access_token,
+              refresh_token,
             });
             if (sessionError) throw sessionError;
-            
-            router.replace('/(tabs)/feed' as any);
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          // 3. Obtener el usuario autenticado
+          const { data: { user } } = await supabase.auth.getUser();
+
+          if (user) {
+            // Consultar perfil en Supabase
+            let { data: profile } = await supabase
+              .from('profiles')
+              .select('gender, birth_date')
+              .eq('id', user.id)
+              .maybeSingle();
+
+            // Si el perfil no existe aún en la BD, crearlo con datos del OAuth
+            if (!profile) {
+              const username = user.email
+                ? user.email.split('@')[0] + '_' + user.id.slice(0, 4)
+                : 'usuario_' + user.id.slice(0, 4);
+
+              const full_name = user.user_metadata?.full_name || user.user_metadata?.name || 'Usuario Aura';
+              const avatar_url = user.user_metadata?.avatar_url || user.user_metadata?.picture || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400';
+
+              await supabase.from('profiles').upsert({
+                id: user.id,
+                email: user.email || '',
+                username,
+                full_name,
+                avatar_url,
+                gender: 'unspecified',
+                status: 'esperando_biometria',
+              }, { onConflict: 'id' });
+
+              setRequiresOnboarding(true);
+            } else if (!profile.gender || profile.gender === 'unspecified' || !profile.birth_date) {
+              setRequiresOnboarding(true);
+            } else {
+              router.replace('/(tabs)/feed' as any);
+            }
+          } else {
+            setErrorMessage('No se pudo iniciar sesión con Google. Por favor reintenta.');
           }
         }
       }
     } catch (e: any) {
-      setErrorMessage(e.message || 'Error con inicio social.');
+      console.error('Error en OAuth:', e);
+      setErrorMessage(e.message || 'Error al iniciar sesión con Google.');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleCompleteOnboarding = async () => {
+    if (!birthDate) {
+      setErrorMessage("Por favor selecciona tu fecha de nacimiento.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Formatear DD/MM/YYYY a YYYY-MM-DD para columna DATE de PostgreSQL
+        let formattedDate = birthDate;
+        if (birthDate.includes('/')) {
+          const parts = birthDate.split('/');
+          if (parts.length === 3) {
+            formattedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+          }
+        }
+
+        const { error: updateErr } = await supabase
+          .from('profiles')
+          .update({ gender, birth_date: formattedDate })
+          .eq('id', user.id);
+
+        if (updateErr) throw updateErr;
+      }
+      setRequiresOnboarding(false);
+      router.replace('/(tabs)/feed' as any);
+    } catch (e: any) {
+      setErrorMessage(e.message || 'Error al guardar los datos.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
   const handlePickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
@@ -399,7 +525,7 @@ export default function LoginAuthScreen() {
                           {birthDate || 'Fecha Nacimiento (DD/MM/AAAA)'}
                         </Text>
                       </TouchableOpacity>
-                      {showDatePicker && (
+                      {showDatePicker && Platform.OS !== 'web' && (
                         <DateTimePicker
                           value={birthDate ? new Date(birthDate.split('/').reverse().join('-')) : new Date()}
                           mode="date"
@@ -582,6 +708,14 @@ export default function LoginAuthScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
+      {/* Loading Overlay */}
+      {loading && (
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', zIndex: 999 }]}>
+          <ActivityIndicator size="large" color="#00E5FF" />
+          <Text style={{ color: '#00E5FF', fontWeight: '800', marginTop: 14 }}>Conectando...</Text>
+        </View>
+      )}
+
       {/* OTP Modal */}
       <Modal visible={emailOtpModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
@@ -654,6 +788,82 @@ export default function LoginAuthScreen() {
           setAlertConfig(null);
         } : undefined}
       />
+      {/* Onboarding Modal (Gender & BirthDate after Google Login) */}
+      <Modal visible={requiresOnboarding} animationType="slide" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(5,5,10,0.95)', justifyContent: 'center', padding: 20 }}>
+          <LinearGradient colors={['#1F2937', '#0A0A10']} style={{ borderRadius: 24, padding: 24, borderWidth: 1, borderColor: '#00E5FF' }}>
+            <Text style={{ color: '#FFF', fontSize: 24, fontWeight: '900', textAlign: 'center', marginBottom: 10 }}>Casi listos ✨</Text>
+            <Text style={{ color: '#9CA3AF', textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>Completa tu perfil para ofrecerte la mejor experiencia en AURA LIVE.</Text>
+            
+            <Text style={{ color: '#9CA3AF', fontSize: 12, fontWeight: '700', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Tu Género</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+              <TouchableOpacity onPress={() => setGender('female')} style={{ flex: 1 }}>
+                <LinearGradient
+                  colors={gender === 'female' ? ['#FF007F', '#831843'] : ['#1F2937', '#111827']}
+                  style={{ paddingVertical: 12, borderRadius: 14, alignItems: 'center', borderWidth: 1.5, borderColor: gender === 'female' ? '#FF007F' : '#374151' }}
+                >
+                  <Text style={{ color: gender === 'female' ? '#FFF' : '#9CA3AF', fontWeight: '800', fontSize: 14 }}>👩 Mujer</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setGender('male')} style={{ flex: 1 }}>
+                <LinearGradient
+                  colors={gender === 'male' ? ['#00E5FF', '#1E40AF'] : ['#1F2937', '#111827']}
+                  style={{ paddingVertical: 12, borderRadius: 14, alignItems: 'center', borderWidth: 1.5, borderColor: gender === 'male' ? '#00E5FF' : '#374151' }}
+                >
+                  <Text style={{ color: gender === 'male' ? '#000' : '#9CA3AF', fontWeight: '800', fontSize: 14 }}>👨 Hombre</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ color: '#9CA3AF', fontSize: 12, fontWeight: '700', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Fecha de Nacimiento</Text>
+            <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[styles.inputRow, { paddingVertical: 14, marginBottom: 24 }]}>
+              <CalendarDays size={20} color="#9CA3AF" />
+              <Text style={{ color: birthDate ? '#FFF' : '#6B7280', flex: 1, marginLeft: 10 }}>{birthDate || 'Selecciona tu fecha'}</Text>
+            </TouchableOpacity>
+
+            {errorMessage && (
+              <Text style={{ color: '#EF4444', textAlign: 'center', marginBottom: 12, fontSize: 12 }}>{errorMessage}</Text>
+            )}
+
+            <TouchableOpacity onPress={handleCompleteOnboarding} disabled={loading} style={{ overflow: 'hidden', borderRadius: 16 }}>
+              <LinearGradient colors={['#00E5FF', '#0284C7']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ paddingVertical: 16, alignItems: 'center' }}>
+                {loading ? <ActivityIndicator color="#000" /> : <Text style={{ color: '#000', fontWeight: '900', fontSize: 16 }}>Continuar 🚀</Text>}
+              </LinearGradient>
+            </TouchableOpacity>
+          </LinearGradient>
+        </View>
+      </Modal>
+
+      {/* DateTimePicker global (para onboarding modal) */}
+      {showDatePicker && Platform.OS !== 'web' && (
+        <DateTimePicker
+          value={birthDate ? new Date(birthDate.split('/').reverse().join('-')) : new Date()}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          maximumDate={new Date()}
+          onChange={(event, selectedDate) => {
+            setShowDatePicker(Platform.OS === 'ios');
+            if (selectedDate) {
+              const day = selectedDate.getDate().toString().padStart(2, '0');
+              const month = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
+              const year = selectedDate.getFullYear();
+              setBirthDate(`${day}/${month}/${year}`);
+            }
+          }}
+        />
+      )}
+
+      {/* Modal de Conectando */}
+      <Modal visible={loading} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(2,2,5,0.92)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <LinearGradient colors={['#1F2937', '#0A0A10']} style={{ paddingVertical: 24, paddingHorizontal: 36, borderRadius: 24, alignItems: 'center', borderWidth: 1.5, borderColor: '#00E5FF' }}>
+            <ActivityIndicator size="large" color="#00E5FF" style={{ marginBottom: 12 }} />
+            <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 16, textAlign: 'center' }}>
+              Conectando...
+            </Text>
+          </LinearGradient>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

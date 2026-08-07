@@ -1,9 +1,9 @@
 import ZegoExpressEngine, { ZegoScenario, ZegoUpdateType, ZegoRoomStateChangedReason, ZegoPublisherState } from 'zego-express-engine-reactnative';
 import { Platform } from 'react-native';
 
-// TODO: Registrate en ZegoCloud.com y reemplaza estas credenciales
-const APP_ID = 255929730; // Extraído de tu captura
-const APP_SIGN = ""; // Falta el AppSign completo
+// Extraemos de las variables de entorno configuradas en el archivo .env
+const APP_ID = parseInt(process.env.EXPO_PUBLIC_ZEGO_APP_ID || '0', 10);
+const APP_SIGN = process.env.EXPO_PUBLIC_ZEGO_APP_SIGN || '';
 
 class ZegoService {
   private static instance: ZegoService;
@@ -30,7 +30,7 @@ class ZegoService {
       const profile = {
         appID: APP_ID,
         appSign: Platform.OS !== 'web' ? APP_SIGN : '',
-        scenario: ZegoScenario.LiveBroadcasting
+        scenario: ZegoScenario.Broadcast
       };
 
       this.engine = await ZegoExpressEngine.createEngineWithProfile(profile);
@@ -52,6 +52,16 @@ class ZegoService {
   async logoutRoom(roomID: string) {
     console.log(`🔌 Saliendo de la sala WebRTC: ${roomID}`);
     await this.engine?.logoutRoom(roomID);
+  }
+
+  async startPublishingStream(streamID: string) {
+    console.log(`🎥 Publicando stream: ${streamID}`);
+    await this.engine?.startPublishingStream(streamID);
+  }
+
+  async stopPublishingStream() {
+    console.log(`🛑 Deteniendo stream local`);
+    await this.engine?.stopPublishingStream();
   }
 
   async destroyEngine() {

@@ -6,6 +6,11 @@ import { useTheme } from '../../hooks/useTheme';
 import { MessageSquare, Search, Edit, Sparkles, ShieldCheck } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
+
+import { Cyber3DBackground } from '../../components/Cyber3DBackground';
+
+import { supabase } from '../../lib/supabase';
+
 type ChatPreview = {
   id: string;
   userId: string;
@@ -18,53 +23,93 @@ type ChatPreview = {
   isVip?: boolean;
 };
 
-const mockChats: ChatPreview[] = [
-  {
-    id: 'chat-1',
-    userId: 'u1',
-    username: 'Elena Neo 🌟',
-    avatar: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=200',
-    lastMessage: 'Enviando foto efímera 📸',
-    timestamp: '12:05 PM',
-    unreadCount: 2,
-    isOnline: true,
-    isVip: true,
-  },
-  {
-    id: 'chat-2',
-    userId: 'u2',
-    username: 'Carlos VIP 👑',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200',
-    lastMessage: '¡Excelente transmisión el día de hoy!',
-    timestamp: 'Ayer',
-    unreadCount: 0,
-    isOnline: false,
-    isVip: true,
-  },
-  {
-    id: 'chat-3',
-    userId: 'u3',
-    username: 'Mariana Live 💕',
-    avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200',
-    lastMessage: 'Nos vemos en la sala de 8 cámaras 🔥',
-    timestamp: 'Hace 2 días',
-    unreadCount: 0,
-    isOnline: true,
-  },
-];
-
-import { Cyber3DBackground } from '../../components/Cyber3DBackground';
-
 export default function MessagesScreen() {
   const theme = useTheme();
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
-  const [chats, setChats] = useState(mockChats);
-  const [activeMainTab, setActiveMainTab] = useState<'mensajes' | 'amigos'>('mensajes');
+  const [chats, setChats] = useState<ChatPreview[]>([]);
+  const [amigos, setAmigos] = useState<any[]>([]);
+  const [activeMainTab, setActiveMainTab] = useState<'mensajes' | 'contactos'>('mensajes');
   const [activeSubTab, setActiveSubTab] = useState<'seguidos' | 'amigos' | 'seguidores'>('amigos');
+
+  React.useEffect(() => {
+    fetchData();
+  }, [activeMainTab]);
+
+  const fetchData = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      if (activeMainTab === 'mensajes') {
+        // Cargar conversaciones reales desde direct_messages
+        const { data: msgs } = await supabase
+          .from('direct_messages')
+          .select('id, content, created_at, is_read, sender_id, receiver_id, profiles!direct_messages_sender_id_fkey(full_name, avatar_url), receiver:profiles!direct_messages_receiver_id_fkey(full_name, avatar_url)')
+          .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+          .eq('is_deleted', false)
+          .order('created_at', { ascending: false })
+          .limit(50);
+
+        if (msgs) {
+          // Agrupar por conversación (usuario con quien chateamos)
+          const convoMap: Record<string, any> = {};
+          msgs.forEach(m => {
+            const otherId = m.sender_id === user.id ? m.receiver_id : m.sender_id;
+            const otherProfile = m.sender_id === user.id ? m.receiver : m.profiles;
+            if (!convoMap[otherId]) {
+              convoMap[otherId] = {
+                id: otherId,
+                userId: otherId,
+                username: otherProfile?.full_name || 'Usuario',
+                avatar: otherProfile?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+                lastMessage: m.content || '📎 Adjunto',
+                timestamp: new Date(m.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+                unreadCount: (!m.is_read && m.receiver_id === user.id) ? 1 : 0,
+                isOnline: false,
+              };
+            }
+          });
+          setChats(Object.values(convoMap));
+        } else {
+          setChats([]);
+        }
+      } else {
+        // Cargar seguidores / seguidos
+        const { data: follows } = await supabase
+          .from('followers')
+          .select('follower_id, following_id')
+          .or(`follower_id.eq.${user.id},following_id.eq.${user.id}`);
+          
+        if (follows) {
+          const myFollowers = follows.filter(f => f.following_id === user.id).map(f => f.follower_id);
+          const iFollow = follows.filter(f => f.follower_id === user.id).map(f => f.following_id);
+          const mutuals = myFollowers.filter(id => iFollow.includes(id));
+          
+          let targetIds = mutuals;
+          if (activeSubTab === 'seguidores') targetIds = myFollowers;
+          if (activeSubTab === 'seguidos') targetIds = iFollow;
+          
+          if (targetIds.length > 0) {
+            const { data: profs } = await supabase.from('profiles').select('*').in('id', targetIds);
+            setAmigos(profs || []);
+          } else {
+            setAmigos([]);
+          }
+        }
+      }
+    } catch (e) {
+      console.log('Error fetching:', e);
+    }
+  };
+
 
   const filteredChats = chats.filter((c) =>
     c.username.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  
+  const filteredAmigos = amigos.filter((a) =>
+    (a.full_name || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -76,14 +121,14 @@ export default function MessagesScreen() {
             <Text style={{ color: activeMainTab === 'mensajes' ? '#FFF' : '#6B7280', fontSize: 20, fontWeight: '900' }}>Mensajes</Text>
             {activeMainTab === 'mensajes' && <View style={{ height: 3, width: '100%', backgroundColor: '#00E5FF', marginTop: 4, borderRadius: 2 }} />}
          </TouchableOpacity>
-         <TouchableOpacity onPress={() => setActiveMainTab('amigos')} style={{ marginHorizontal: 20 }}>
-            <Text style={{ color: activeMainTab === 'amigos' ? '#FFF' : '#6B7280', fontSize: 20, fontWeight: '900' }}>Amigos</Text>
-            {activeMainTab === 'amigos' && <View style={{ height: 3, width: '100%', backgroundColor: '#FF007F', marginTop: 4, borderRadius: 2 }} />}
+         <TouchableOpacity onPress={() => setActiveMainTab('contactos')} style={{ marginHorizontal: 20 }}>
+            <Text style={{ color: activeMainTab === 'contactos' ? '#FFF' : '#6B7280', fontSize: 20, fontWeight: '900' }}>Contactos</Text>
+            {activeMainTab === 'contactos' && <View style={{ height: 3, width: '100%', backgroundColor: '#FF007F', marginTop: 4, borderRadius: 2 }} />}
          </TouchableOpacity>
       </View>
 
-      {/* Sub Tabs for Amigos */}
-      {activeMainTab === 'amigos' && (
+      {/* Sub Tabs for Contactos */}
+      {activeMainTab === 'contactos' && (
          <View style={{ flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: 'rgba(255,255,255,0.03)', marginBottom: 10 }}>
             <TouchableOpacity onPress={() => setActiveSubTab('seguidos')}>
                <Text style={{ color: activeSubTab === 'seguidos' ? '#00E5FF' : '#9CA3AF', fontWeight: 'bold', fontSize: 13 }}>Seguidos</Text>
@@ -169,20 +214,31 @@ export default function MessagesScreen() {
           </>
         ) : (
           <View>
-             {mockChats.map((friend) => (
+             {filteredAmigos.map((friend) => (
                 <View key={`friend-${friend.id}`} style={[styles.chatRow, { alignItems: 'center' }]}>
-                   <Image source={{ uri: friend.avatar }} style={[styles.avatar, { width: 50, height: 50, borderRadius: 25 }]} />
+                   <Image source={{ uri: friend.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400' }} style={[styles.avatar, { width: 50, height: 50, borderRadius: 25 }]} />
                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 15 }}>{friend.username}</Text>
-                      <Text style={{ color: '#9CA3AF', fontSize: 11, marginTop: 2 }}>Hace 1 hr</Text>
+                      <Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 15 }}>{friend.full_name}</Text>
+                      <Text style={{ color: '#9CA3AF', fontSize: 11, marginTop: 2 }}>{friend.status === 'verified' ? 'Verificado' : 'Activo'}</Text>
                    </View>
-                   <TouchableOpacity style={{ backgroundColor: 'rgba(255,0,127,0.15)', borderWidth: 1, borderColor: '#FF007F', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}>
+                   <TouchableOpacity 
+                    onPress={() => {
+                        if (activeSubTab === 'amigos') {
+                           router.push(`/chat/${friend.id}` as any);
+                        } else {
+                           Alert.alert('Solo Mutuales', 'Deben seguirse mutuamente para poder iniciar un chat privado. ¡Vuelve a Conexiones para hacer Match!');
+                        }
+                    }}
+                    style={{ backgroundColor: 'rgba(255,0,127,0.15)', borderWidth: 1, borderColor: '#FF007F', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}>
                       <Text style={{ color: '#FF007F', fontWeight: 'bold', fontSize: 12 }}>
-                         {activeSubTab === 'seguidores' ? '+ Seguir' : 'Chat'}
+                         {activeSubTab === 'amigos' ? 'Chat' : '+ Seguir'}
                       </Text>
                    </TouchableOpacity>
                 </View>
              ))}
+             {filteredAmigos.length === 0 && (
+                 <Text style={{ color: '#9CA3AF', textAlign: 'center', marginTop: 40 }}>No hay usuarios en esta lista.</Text>
+             )}
           </View>
         )}
       </ScrollView>

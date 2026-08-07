@@ -17,6 +17,7 @@ export interface GiftItem {
 }
 
 const DEFAULT_GIFTS: GiftItem[] = [
+  { id: 'clover-pack-3', name: 'Pack 3 Tréboles 🍀', coinPrice: 0, iconUrl: 'https://cdn-icons-png.flaticon.com/512/346/346195.png', lottieUrl: 'https://lottie.host/8c1303ed-7cfa-4ebf-801a-8ff6cc6eb2c2/2O0p2c34kK.json', isExclusive: false, category: 'Popular' },
   { id: '1', name: 'Rosa Neón', coinPrice: 10, iconUrl: 'https://cdn-icons-png.flaticon.com/512/3004/3004071.png', lottieUrl: 'https://lottie.host/8c1303ed-7cfa-4ebf-801a-8ff6cc6eb2c2/2O0p2c34kK.json', isExclusive: false, category: 'Popular' },
   { id: '2', name: 'Beso Cyber', coinPrice: 50, iconUrl: 'https://cdn-icons-png.flaticon.com/512/2850/2850550.png', lottieUrl: 'https://lottie.host/80769d49-411a-42cd-bb43-7f72295240c5/Z5f5u9bN0S.json', isExclusive: false, category: 'Popular' },
   { id: '3', name: 'Corona Diamante', coinPrice: 500, iconUrl: 'https://cdn-icons-png.flaticon.com/512/714/714407.png', lottieUrl: 'https://lottie.host/17e5a7b6-cc7d-417d-bebb-42df6495d4d3/7oG9Y8N4uH.json', isExclusive: false, category: 'Lujo' },
@@ -60,6 +61,14 @@ export const GiftModal: React.FC<GiftModalProps> = ({
     if (senderCoins < selectedGift.coinPrice) {
       setErrorMessage('Saldo insuficiente. Recarga monedas en la tienda.');
       return;
+    }
+
+    if (selectedGift.id === 'clover-pack-3') {
+      try {
+        await supabase.from('profiles').update({ clover_gift_sent: true }).eq('id', senderId);
+      } catch (e) {
+        console.log('Error updating clover_gift_sent:', e);
+      }
     }
 
     setLoading(true);
@@ -263,7 +272,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     marginBottom: 10,
   },
   headerTitle: {
@@ -279,7 +288,7 @@ const styles = StyleSheet.create({
   balanceBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     backgroundColor: 'rgba(255, 215, 0, 0.1)',
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -342,6 +351,6 @@ const styles = StyleSheet.create({
   sendBtn: {
     paddingVertical: 12,
     alignItems: 'center',
-    justify: 'center',
+    justifyContent: 'center',
   },
 });

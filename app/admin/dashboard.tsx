@@ -32,7 +32,6 @@ export default function SuperAdminDashboardScreen() {
 
   // Approvals Data
   const [pendingAgencies, setPendingAgencies] = useState<any[]>([]);
-  const [pendingFamilies, setPendingFamilies] = useState<any[]>([]);
 
   // Moderation Data
   const [searchQuery, setSearchQuery] = useState('');
@@ -101,8 +100,8 @@ export default function SuperAdminDashboardScreen() {
 
       setMetrics({
         totalUsers: totalUsers || 0,
-        onlineUsers: (onlineUsers || 0) + 4820, // Add simulated baseline for demo
-        offlineUsers: (totalUsers || 0) - (onlineUsers || 0),
+        onlineUsers: onlineUsers || 0,
+        offlineUsers: Math.max(0, (totalUsers || 0) - (onlineUsers || 0)),
         totalAgencies: totalAgencies || 0,
         totalEarnings: 145020.50,
       });
@@ -110,9 +109,6 @@ export default function SuperAdminDashboardScreen() {
       // 2. Load Approvals
       const { data: agData } = await supabase.from('agencies').select('id, name, owner_id, profiles!fk_agency_owner(full_name, email)').eq('status', 'pending');
       if (agData) setPendingAgencies(agData);
-
-      const { data: famData } = await supabase.from('families').select('id, name, description, owner_id, profiles(full_name, email)').eq('status', 'pending');
-      if (famData) setPendingFamilies(famData);
 
       // 3. Load Tickets
       const { data: tData } = await supabase.from('support_tickets').select('id, subject, description, status, profiles(full_name)').eq('status', 'open').order('created_at', { ascending: false }).limit(20);
@@ -197,7 +193,7 @@ export default function SuperAdminDashboardScreen() {
   const handleApproveAgency = async (agencyId: string, ownerId: string) => {
     try {
       await supabase.from('agencies').update({ status: 'approved' }).eq('id', agencyId);
-      await supabase.from('profiles').update({ is_agency_account: true, agency_id: agencyId }).eq('id', ownerId);
+      await supabase.from('profiles').update({ is_agency: true, agency_id: agencyId }).eq('id', ownerId);
       setPendingAgencies(prev => prev.filter(a => a.id !== agencyId));
       setMetrics(prev => ({ ...prev, totalAgencies: prev.totalAgencies + 1 }));
     } catch (e) {}
@@ -207,20 +203,6 @@ export default function SuperAdminDashboardScreen() {
     try {
       await supabase.from('agencies').update({ status: 'rejected' }).eq('id', agencyId);
       setPendingAgencies(prev => prev.filter(a => a.id !== agencyId));
-    } catch (e) {}
-  };
-
-  const handleApproveFamily = async (familyId: string) => {
-    try {
-      await supabase.from('families').update({ status: 'approved' }).eq('id', familyId);
-      setPendingFamilies(prev => prev.filter(f => f.id !== familyId));
-    } catch (e) {}
-  };
-
-  const handleRejectFamily = async (familyId: string) => {
-    try {
-      await supabase.from('families').update({ status: 'rejected' }).eq('id', familyId);
-      setPendingFamilies(prev => prev.filter(f => f.id !== familyId));
     } catch (e) {}
   };
 
@@ -443,22 +425,6 @@ export default function SuperAdminDashboardScreen() {
                   <View className="flex-row gap-2">
                     <TouchableOpacity onPress={() => handleApproveAgency(agency.id, agency.owner_id)} className="p-2.5 rounded-xl bg-green-500/20 border border-green-500"><CheckCircle size={20} color="#22C55E" /></TouchableOpacity>
                     <TouchableOpacity onPress={() => handleRejectAgency(agency.id)} className="p-2.5 rounded-xl bg-red-500/20 border border-red-500"><XCircle size={20} color="#EF4444" /></TouchableOpacity>
-                  </View>
-                </View>
-              ))
-            )}
-
-            <Text className="text-indigo-400 font-black text-base mb-3 mt-4 uppercase tracking-wider">🛡️ Familias ({pendingFamilies.length})</Text>
-            {pendingFamilies.length === 0 ? <Text className="text-gray-500 italic mb-6">Nada pendiente.</Text> : (
-              pendingFamilies.map((family) => (
-                <View key={family.id} className="bg-gray-900 p-4 rounded-2xl border border-indigo-500/30 mb-3 flex-row items-center justify-between">
-                  <View className="flex-1 mr-2">
-                    <Text className="text-white font-bold">{family.name}</Text>
-                    <Text className="text-gray-400 text-xs">Dueño: {family.profiles?.full_name}</Text>
-                  </View>
-                  <View className="flex-row gap-2">
-                    <TouchableOpacity onPress={() => handleApproveFamily(family.id)} className="p-2.5 rounded-xl bg-green-500/20 border border-green-500"><CheckCircle size={20} color="#22C55E" /></TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleRejectFamily(family.id)} className="p-2.5 rounded-xl bg-red-500/20 border border-red-500"><XCircle size={20} color="#EF4444" /></TouchableOpacity>
                   </View>
                 </View>
               ))

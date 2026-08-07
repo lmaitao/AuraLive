@@ -2,12 +2,17 @@ import React, { useEffect } from 'react';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../hooks/useTheme';
-import { View, Platform, Alert } from 'react-native';
+import { View, Platform, Alert, LogBox } from 'react-native';
 import * as ScreenCapture from 'expo-screen-capture';
 import { Camera } from 'expo-camera';
 import * as MediaLibrary from 'expo-media-library';
 import { Audio } from 'expo-av';
 import { AuraLaunchSplash } from '../components/AuraLaunchSplash';
+
+LogBox.ignoreLogs([
+  '[expo-av]: Expo AV has been deprecated',
+  'Video component from `expo-av` is deprecated',
+]);
 
 export default function RootLayout() {
   const theme = useTheme();
@@ -71,9 +76,11 @@ export default function RootLayout() {
       >
         <Stack.Screen name="index" />
         <Stack.Screen name="auth/login" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="auth/callback" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="live/[id]" />
         <Stack.Screen name="shop" />
+        <Stack.Screen name="wealth/index" />
         <Stack.Screen name="agency/dashboard" />
         <Stack.Screen name="admin/dashboard" />
         <Stack.Screen name="chat/[id]" />

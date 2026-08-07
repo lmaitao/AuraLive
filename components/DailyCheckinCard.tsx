@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Alert, ActivityIndicator, StyleSheet } from 'react-native';
 import { useTheme } from '../hooks/useTheme';
 import { supabase } from '../lib/supabase';
-import { Gift, Sparkles, CheckCircle2 } from 'lucide-react-native';
+import { Gift, Sparkles, CheckCircle2, Clock } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 interface DailyCheckinCardProps {
@@ -14,6 +14,40 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({ userId, onCl
   const theme = useTheme();
   const [loading, setLoading] = useState(false);
   const [claimedToday, setClaimedToday] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (userId) {
+      checkCheckinStatus();
+    }
+  }, [userId]);
+
+  const checkCheckinStatus = async () => {
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('last_checkin_date')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (data?.last_checkin_date) {
+        const lastDate = new Date(data.last_checkin_date).getTime();
+        const now = Date.now();
+        const diffHours = (now - lastDate) / (1000 * 60 * 60);
+
+        if (diffHours < 24) {
+          setClaimedToday(true);
+          const remainingHours = Math.ceil(24 - diffHours);
+          setTimeRemaining(`${remainingHours}h`);
+        } else {
+          setClaimedToday(false);
+          setTimeRemaining(null);
+        }
+      }
+    } catch (e) {
+      console.log('Error checking checkin status:', e);
+    }
+  };
 
   const handleClaim = async () => {
     setLoading(true);
@@ -24,14 +58,15 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({ userId, onCl
 
       if (error) {
         Alert.alert('Cofre Diario', error.message);
-        if (error.message.includes('hoy')) {
+        if (error.message.includes('hoy') || error.message.includes('24')) {
           setClaimedToday(true);
         }
       } else {
         const added = data?.coins_awarded ?? 25;
         setClaimedToday(true);
+        setTimeRemaining('24h');
         onClaimSuccess(added);
-        Alert.alert('¡Cofre Reclamado! 🎁', `Has recibido +${added} monedas gratis por tu fidelidad diaria.`);
+        Alert.alert('¡Cofre Reclamado! 🎁', `Has recibido +${added} monedas gratis. Próximo reclamo en 24 horas.`);
       }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Error de conexión.');
@@ -55,7 +90,9 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({ userId, onCl
             <Text style={styles.titleText}>Cofre de Recompensa Diario</Text>
             <Sparkles size={12} color="#00E5FF" />
           </View>
-          <Text style={styles.subtext}>Reclama tu bonus de +25 monedas cada 24 horas.</Text>
+          <Text style={styles.subtext}>
+            {claimedToday ? `Reclamado. Vuelve en ${timeRemaining || '24h'} para reclamar +25 💰` : 'Reclama tu bonus de +25 monedas cada 24 horas.'}
+          </Text>
         </View>
       </View>
 
@@ -73,8 +110,8 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({ userId, onCl
             <ActivityIndicator color="#000" size="small" />
           ) : claimedToday ? (
             <>
-              <CheckCircle2 size={13} color="#9CA3AF" />
-              <Text style={{ color: '#9CA3AF', fontWeight: '800', fontSize: 10 }}>Reclamado</Text>
+              <CheckCircle2 size={13} color="#34D399" />
+              <Text style={{ color: '#34D399', fontWeight: '900', fontSize: 10 }}>Reclamado ({timeRemaining || '24h'})</Text>
             </>
           ) : (
             <Text style={styles.claimBtnText}>Reclamar +25 💰</Text>
