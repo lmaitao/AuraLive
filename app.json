@@ -7,7 +7,6 @@
     "icon": "./assets/icon.png",
     "scheme": "auralive",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -82,7 +81,10 @@
         "expo-build-properties",
         {
           "android": {
-            "minSdkVersion": 24
+            "minSdkVersion": 24,
+            "extraBuildProperties": {
+              "org.gradle.jvmargs": "-Xmx2048m -XX:MaxMetaspaceSize=512m"
+            }
           },
           "ios": {
             "deploymentTarget": "15.1"
