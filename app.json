@@ -57,7 +57,7 @@
       "bundler": "metro"
     },
     "plugins": [
-      "./withZegoMaven.js",
+      "./withZegoConfig.js",
       "expo-router",
       [
         "expo-camera",
@@ -82,10 +82,7 @@
         "expo-build-properties",
         {
           "android": {
-            "minSdkVersion": 24,
-            "compileSdkVersion": 34,
-            "targetSdkVersion": 34,
-            "buildToolsVersion": "34.0.0"
+            "minSdkVersion": 24
           },
           "ios": {
             "deploymentTarget": "15.1"
