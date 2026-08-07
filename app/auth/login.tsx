@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Image, Modal, ActivityIndicator, ScrollView, Platform, Alert, KeyboardAvoidingView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import * as AuthSession from 'expo-auth-session';
+import * as QueryParams from 'expo-auth-session/build/QueryParams';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTheme } from '../../hooks/useTheme';
 import { supabase } from '../../lib/supabase';
 import { simulateLivenessScan } from '../../utils/biometricMock';
@@ -13,6 +17,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withRepeat, Easing, withSpring } from 'react-native-reanimated';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginAuthScreen() {
   const theme = useTheme();
@@ -51,6 +57,7 @@ export default function LoginAuthScreen() {
   const [avatarUrl, setAvatarUrl] = useState('https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400');
   const [gender, setGender] = useState<'female' | 'male'>('female');
   const [birthDate, setBirthDate] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [showAgeVerification, setShowAgeVerification] = useState(false);
   const [alertConfig, setAlertConfig] = useState<AuraAlertProps | null>(null);
   const [loading, setLoading] = useState(false);
@@ -74,27 +81,42 @@ export default function LoginAuthScreen() {
   const [scanningBiometrics, setScanningBiometrics] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  const handleOAuthLogin = async (provider: 'google' | 'facebook' | 'tiktok') => {
+  const handleOAuthLogin = async (provider: 'google' | 'facebook' | 'apple') => {
     setErrorMessage(null);
     setLoading(true);
     try {
-      if (provider !== 'tiktok') {
-        const { data, error } = await supabase.auth.signInWithOAuth({
-          provider: provider as 'google' | 'facebook',
-          options: {
-            redirectTo: Platform.OS === 'web' && typeof window !== 'undefined' ? `${window.location.origin}` : 'auralive://',
-          },
-        });
-        if (error) throw error;
-      } else {
-        setAlertConfig({
-          visible: true,
-          title: "TikTok OAuth",
-          message: "Conexión con TikTok en proceso de validación.",
-          type: "info",
-          confirmText: "Entendido",
-          onConfirm: () => setAlertConfig(null)
-        });
+      const redirectUrl = AuthSession.makeRedirectUri({
+        scheme: 'auralive',
+        path: 'auth/callback',
+      });
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+        },
+      });
+
+      if (error) throw error;
+
+      if (data?.url) {
+        const res = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+        if (res.type === 'success') {
+          const { url } = res;
+          const { params, errorCode } = QueryParams.getQueryParams(url);
+          if (errorCode) throw new Error(errorCode);
+          
+          if (params.access_token && params.refresh_token) {
+            const { error: sessionError } = await supabase.auth.setSession({
+              access_token: params.access_token,
+              refresh_token: params.refresh_token,
+            });
+            if (sessionError) throw sessionError;
+            
+            router.replace('/(tabs)/feed' as any);
+          }
+        }
       }
     } catch (e: any) {
       setErrorMessage(e.message || 'Error con inicio social.');
@@ -320,7 +342,7 @@ export default function LoginAuthScreen() {
                     {[
                       { label: 'Google', provider: 'google', colors: ['#374151','#111827'], border: '#6B7280', icon: 'https://cdn4.iconfinder.com/data/icons/logos-brands-7/512/google_logo-google_icongoogle-512.png' },
                       { label: 'Facebook', provider: 'facebook', colors: ['#1D4ED8','#111827'], border: '#3B82F6', icon: 'https://cdn4.iconfinder.com/data/icons/social-media-flat-7/64/Social-media_Facebook-512.png' },
-                      { label: 'TikTok', provider: 'tiktok', colors: ['#DB2777','#111827'], border: '#EC4899', icon: 'https://cdn4.iconfinder.com/data/icons/social-media-flat-7/64/Social-media_Tiktok-512.png' },
+                      { label: 'Apple', provider: 'apple', colors: ['#111827','#000000'], border: '#374151', icon: 'https://cdn4.iconfinder.com/data/icons/social-media-logos-6/512/65-apple-512.png' },
                     ].map(({ label, provider, colors, border, icon }) => (
                       <TouchableOpacity key={provider} onPress={() => handleOAuthLogin(provider as any)} style={{ flex: 1 }}>
                         <LinearGradient colors={colors as any} style={[styles.socialBtn, { borderColor: border }]}>
@@ -353,10 +375,29 @@ export default function LoginAuthScreen() {
                         <UserCheck size={16} color="#9CA3AF" />
                         <TextInput value={fullName} onChangeText={setFullName} placeholder="Nombre Completo" placeholderTextColor="#6B7280" style={styles.input} />
                       </View>
-                      <View style={styles.inputRow}>
+                      <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[styles.inputRow, { paddingVertical: 14 }]}>
                         <CalendarDays size={16} color="#9CA3AF" />
-                        <TextInput value={birthDate} onChangeText={setBirthDate} placeholder="Fecha Nacimiento (DD/MM/AAAA)" placeholderTextColor="#6B7280" keyboardType="numeric" maxLength={10} style={styles.input} />
-                      </View>
+                        <Text style={[styles.input, { color: birthDate ? '#FFF' : '#6B7280', flex: 1, padding: 0 }]}>
+                          {birthDate || 'Fecha Nacimiento (DD/MM/AAAA)'}
+                        </Text>
+                      </TouchableOpacity>
+                      {showDatePicker && (
+                        <DateTimePicker
+                          value={birthDate ? new Date(birthDate.split('/').reverse().join('-')) : new Date()}
+                          mode="date"
+                          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                          maximumDate={new Date()}
+                          onChange={(event, selectedDate) => {
+                            setShowDatePicker(Platform.OS === 'ios');
+                            if (selectedDate) {
+                              const day = selectedDate.getDate().toString().padStart(2, '0');
+                              const month = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
+                              const year = selectedDate.getFullYear();
+                              setBirthDate(`${day}/${month}/${year}`);
+                            }
+                          }}
+                        />
+                      )}
                       {/* Gender selector */}
                       <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
                         <TouchableOpacity onPress={() => setGender('female')} style={{ flex: 1 }}>

@@ -90,7 +90,8 @@
             "deploymentTarget": "15.1"
           }
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "router": {},
