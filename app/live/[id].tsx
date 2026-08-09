@@ -379,19 +379,6 @@ export default function LiveRoomScreen() {
             shadowRadius: 8,
           }}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, paddingBottom: 4, borderBottomWidth: 1, borderColor: 'rgba(0, 229, 255, 0.2)' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <MessageSquare size={13} color="#00E5FF" />
-              <Text style={{ color: '#00E5FF', fontWeight: '900', fontSize: 11, letterSpacing: 0.5 }}>
-                CHAT DE LA SALA EN VIVO
-              </Text>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0, 229, 255, 0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, borderWidth: 1, borderColor: '#00E5FF' }}>
-              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#22C55E' }} />
-              <Text style={{ color: '#00E5FF', fontWeight: '800', fontSize: 9 }}>ACTIVO (60 FPS)</Text>
-            </View>
-          </View>
-
           <View style={{ flex: 1 }}>
             <LiveChat
               roomId={id as string}

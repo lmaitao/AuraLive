@@ -224,7 +224,7 @@ export default function ConexionesScreen() {
       </View>
 
       {/* Main Tinder Card Container */}
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 60 }}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 110 }}>
         {currentProfile ? (
           <Animated.View
             {...panResponder.panHandlers}
@@ -352,7 +352,7 @@ const styles = StyleSheet.create({
   tagBadge: { position: 'absolute', top: 12, right: 12, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14, borderWidth: 1, borderColor: '#00E5FF' },
   profileOverlay: { position: 'absolute', bottom: 16, left: 16, right: 16 },
   intentChip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, alignSelf: 'flex-start' },
-  actionsBar: { position: 'absolute', bottom: -28, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', width: '100%', paddingHorizontal: 50 },
+  actionsBar: { position: 'absolute', bottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', width: '100%', paddingHorizontal: 50 },
   passBtn: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center', elevation: 8, shadowColor: '#FF3B30', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
   likeBtn: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#FF8C00', alignItems: 'center', justifyContent: 'center', elevation: 8, shadowColor: '#FF8C00', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
   matchOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.85)', padding: 20 },

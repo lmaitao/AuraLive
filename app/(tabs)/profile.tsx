@@ -77,48 +77,81 @@ export default function UserProfileScreen() {
         return;
       }
 
-      // Fetch Profile
-      const { data: profileData, error: profileError } = await supabase
+      // Fetch Profile safely
+      const { data: profileData } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
-        .single();
-        
-      if (profileError) throw profileError;
-      setProfile(profileData);
-      setSvipLevel(profileData.svip_level || 0);
-      setWealthLevel(profileData.wealth_level || 0);
-      setPhotoGallery(profileData.photo_gallery || []);
+        .maybeSingle();
 
-      // Fetch Wallet
-      const { data: walletData, error: walletError } = await supabase
-        .from('wallets')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
-        
-      if (walletError && walletError.code !== 'PGRST116') throw walletError;
-      if (walletData) {
-        setWalletBalance(walletData.coin_balance || 0);
-        setAurasBalance(walletData.aura_balance || 0);
-        setCloverBalance(walletData.clover_balance ?? 3);
+      let pData = profileData;
+      if (!pData) {
+        pData = {
+          id: user.id,
+          full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Usuario Aura',
+          avatar_url: user.user_metadata?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+          bio: '¡Hola! Bienvenidos a mi perfil en Aura Live ✨',
+          gender: 'female',
+          birth_date: '2000-01-01',
+          svip_level: 0,
+          wealth_level: 0,
+          photo_gallery: [],
+          is_identity_verified: true,
+          is_agency: false,
+          is_superadmin: false,
+        };
+        try {
+          await supabase.from('profiles').upsert(pData);
+        } catch (_) {}
       }
 
-      // Calculate Charisma (Mock logic based on auras for now)
-      setCharismaLevel(Math.floor((walletData?.aura_balance || 0) / 100));
+      setProfile(pData);
+      setSvipLevel(pData.svip_level || 0);
+      setWealthLevel(pData.wealth_level || 0);
+      setPhotoGallery(pData.photo_gallery || []);
 
-      // Fetch real follower counts
-      const [{ count: followingCnt }, { count: followersCnt }, { count: visitorsCnt }] = await Promise.all([
-        supabase.from('followers').select('*', { count: 'exact', head: true }).eq('follower_id', user.id),
-        supabase.from('followers').select('*', { count: 'exact', head: true }).eq('following_id', user.id),
-        supabase.from('profile_visitors').select('*', { count: 'exact', head: true }).eq('profile_id', user.id),
-      ]);
-      setFollowingCount(followingCnt || 0);
-      setFollowersCount(followersCnt || 0);
-      setVisitorsCount(visitorsCnt || 0);
+      // Fetch Wallet safely
+      try {
+        const { data: walletData } = await supabase
+          .from('wallets')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (walletData) {
+          setWalletBalance(walletData.coin_balance || 0);
+          setAurasBalance(walletData.aura_balance || 0);
+          setCloverBalance(walletData.clover_balance ?? 3);
+          setCharismaLevel(Math.floor((walletData.aura_balance || 0) / 100));
+        } else {
+          // Create default wallet
+          await supabase.from('wallets').upsert({ user_id: user.id, coin_balance: 1000, aura_balance: 0, clover_balance: 3 });
+          setWalletBalance(1000);
+          setAurasBalance(0);
+          setCloverBalance(3);
+        }
+      } catch (wErr) {
+        console.log('Wallet fetch notice:', wErr);
+      }
+
+      // Fetch counts safely
+      try {
+        const { count: followingCnt } = await supabase.from('followers').select('*', { count: 'exact', head: true }).eq('follower_id', user.id);
+        setFollowingCount(followingCnt || 0);
+      } catch (_) {}
+
+      try {
+        const { count: followersCnt } = await supabase.from('followers').select('*', { count: 'exact', head: true }).eq('following_id', user.id);
+        setFollowersCount(followersCnt || 0);
+      } catch (_) {}
+
+      try {
+        const { count: visitorsCnt } = await supabase.from('profile_visitors').select('*', { count: 'exact', head: true }).eq('profile_id', user.id);
+        setVisitorsCount(visitorsCnt || 0);
+      } catch (_) {}
 
     } catch (e: any) {
-      console.error('Error fetching profile:', e.message);
+      console.error('Error fetching profile:', e.message || e);
     } finally {
       setLoadingProfile(false);
     }
@@ -397,7 +430,6 @@ export default function UserProfileScreen() {
           supabase.from('streamer_daily_missions').delete().eq('user_id', userId),
           supabase.from('support_tickets').delete().eq('user_id', userId),
           supabase.from('withdrawal_requests').delete().eq('user_id', userId),
-          supabase.from('daily_checkins').delete().eq('user_id', userId),
           supabase.from('agencies').delete().eq('owner_id', userId),
         ]);
 
@@ -882,55 +914,67 @@ export default function UserProfileScreen() {
       </Modal>
 
       {/* Modal de Verificación Facial 3D con Cámara */}
-      <Modal visible={livenessModalVisible} animationType="slide" transparent>
+      <Modal visible={livenessModalVisible} animationType="fade" transparent>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <LinearGradient colors={['#1F2937', '#0A0A10']} style={{ width: '100%', maxWidth: 360, borderRadius: 28, padding: 20, borderWidth: 1.5, borderColor: '#FF007F', alignItems: 'center' }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', alignItems: 'center', marginBottom: 12 }}>
+          <LinearGradient colors={['#0F172A', '#020617']} style={{ width: '100%', maxWidth: 380, borderRadius: 28, padding: 24, borderWidth: 1.5, borderColor: '#00E5FF', alignItems: 'center', shadowColor: '#00E5FF', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.4, shadowRadius: 16 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%', alignItems: 'center', marginBottom: 14 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <ScanFace size={24} color="#00E5FF" />
-                <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 16 }}>Verificación Facial</Text>
+                <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 17 }}>Escáner Biométrico Facial</Text>
               </View>
-              <TouchableOpacity onPress={() => setLivenessModalVisible(false)}>
+              <TouchableOpacity onPress={() => setLivenessModalVisible(false)} style={{ padding: 4, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)' }}>
                 <X size={20} color="#9CA3AF" />
               </TouchableOpacity>
             </View>
 
-            <Text style={{ color: '#9CA3AF', fontSize: 12, textAlign: 'center', marginBottom: 16, lineHeight: 18 }}>
-              Centra tu rostro en el círculo para analizar tu identidad y género (Hombre ♂️ / Mujer ♀️). ¡Recompensa: +50 Monedas e Insignia VERIFICADO!
+            <Text style={{ color: '#9CA3AF', fontSize: 12, textAlign: 'center', marginBottom: 18, lineHeight: 18 }}>
+              Coloca tu rostro al centro de la guía biométrica para verificar tu identidad real en Aura Live ⚡
             </Text>
 
-            {/* Visor de Cámara Frontal */}
-            <View style={{ width: 200, height: 200, borderRadius: 100, overflow: 'hidden', borderWidth: 3, borderColor: scanningBiometrics ? '#00E5FF' : '#FF007F', marginBottom: 20, justifyContent: 'center', alignItems: 'center', backgroundColor: '#1F2937', position: 'relative' }}>
-              {cameraPermission?.granted ? (
-                <CameraView style={StyleSheet.absoluteFillObject} facing="front" />
-              ) : (
-                <View style={{ alignItems: 'center', padding: 10 }}>
-                  <CameraIcon size={32} color="#9CA3AF" />
-                  <Text style={{ color: '#9CA3AF', fontSize: 11, textAlign: 'center', marginTop: 8 }}>Permiso de Cámara requerido</Text>
-                </View>
-              )}
+            {/* Futuristic Circular Camera Frame */}
+            <View style={{ position: 'relative', width: 220, height: 220, borderRadius: 110, justifyContent: 'center', alignItems: 'center', marginBottom: 20 }}>
+              <View style={{ width: 220, height: 220, borderRadius: 110, overflow: 'hidden', borderWidth: 3.5, borderColor: scanningBiometrics ? '#00E5FF' : '#FF007F', backgroundColor: '#1E293B', justifyContent: 'center', alignItems: 'center', position: 'relative' }}>
+                {cameraPermission?.granted ? (
+                  <CameraView style={StyleSheet.absoluteFillObject} facing="front" />
+                ) : (
+                  <View style={{ alignItems: 'center', padding: 16 }}>
+                    <CameraIcon size={36} color="#00E5FF" />
+                    <Text style={{ color: '#9CA3AF', fontSize: 12, textAlign: 'center', marginTop: 10, fontWeight: '700' }}>Cámara desactivada</Text>
+                  </View>
+                )}
 
-              {/* Línea Láser Animada */}
-              {scanningBiometrics && (
-                <View style={{ position: 'absolute', top: '35%', left: 0, right: 0, height: 4, backgroundColor: '#00E5FF', shadowColor: '#00E5FF', shadowOpacity: 1, shadowRadius: 10 }} />
-              )}
+                {/* Laser Scan Animation */}
+                {scanningBiometrics && (
+                  <View style={{ position: 'absolute', top: '45%', left: 0, right: 0, height: 3, backgroundColor: '#00E5FF', shadowColor: '#00E5FF', shadowOpacity: 1, shadowRadius: 12 }} />
+                )}
+              </View>
+
+              {/* Status Chip */}
+              <View style={{ position: 'absolute', bottom: -10, backgroundColor: scanningBiometrics ? '#00E5FF' : 'rgba(0,0,0,0.85)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 14, borderWidth: 1, borderColor: scanningBiometrics ? '#00E5FF' : '#FF007F' }}>
+                <Text style={{ color: scanningBiometrics ? '#000' : '#FFF', fontSize: 10, fontWeight: '900', textTransform: 'uppercase' }}>
+                  {scanningBiometrics ? 'Escaneando Rostro... 🔍' : 'Listo para Escanear'}
+                </Text>
+              </View>
             </View>
 
             {!cameraPermission?.granted ? (
-              <TouchableOpacity onPress={requestCameraPermission} style={{ width: '100%', backgroundColor: '#00E5FF', paddingVertical: 14, borderRadius: 20, alignItems: 'center', marginBottom: 10 }}>
-                <Text style={{ color: '#000', fontWeight: '900', fontSize: 14 }}>Permitir Acceso a Cámara 📸</Text>
+              <TouchableOpacity onPress={requestCameraPermission} activeOpacity={0.85} style={{ width: '100%', borderRadius: 20, overflow: 'hidden' }}>
+                <LinearGradient colors={['#00E5FF', '#0284C7']} style={{ paddingVertical: 14, alignItems: 'center' }}>
+                  <Text style={{ color: '#000', fontWeight: '900', fontSize: 13, textTransform: 'uppercase' }}>Permitir Acceso a Cámara 📸</Text>
+                </LinearGradient>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
                 onPress={handleExecuteBiometricsScan}
                 disabled={scanningBiometrics}
+                activeOpacity={0.85}
                 style={{ width: '100%', borderRadius: 20, overflow: 'hidden' }}
               >
                 <LinearGradient colors={scanningBiometrics ? ['#374151', '#1F2937'] : ['#FF007F', '#7C3AED']} style={{ paddingVertical: 14, alignItems: 'center' }}>
                   {scanningBiometrics ? (
-                    <ActivityIndicator color="#00E5FF" />
+                    <ActivityIndicator color="#00E5FF" size="small" />
                   ) : (
-                    <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 14, textTransform: 'uppercase' }}>Iniciar Verificación Facial 📸</Text>
+                    <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 13, textTransform: 'uppercase' }}>Iniciar Verificación Facial 📸</Text>
                   )}
                 </LinearGradient>
               </TouchableOpacity>

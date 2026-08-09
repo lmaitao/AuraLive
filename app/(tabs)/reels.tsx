@@ -81,23 +81,46 @@ export default function ShortVideosScreen() {
 
       const { data, error } = await supabase
         .from('reels')
-        .select('id, user_id, video_url, thumbnail_url, caption, likes_count, comments_count, created_at, profiles(full_name, avatar_url)')
+        .select('*')
         .gte('created_at', twentyFourHoursAgo)
         .order('created_at', { ascending: false });
 
+      if (error) {
+        console.log('Reels fetch notice:', error.message);
+      }
+
       if (data && data.length > 0) {
-        const formatted: ReelItem[] = data.map((r: any) => ({
-          id: r.id,
-          creatorName: r.profiles?.full_name || 'Usuario Aura',
-          creatorAvatar: r.profiles?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-          videoUrl: r.video_url,
-          thumbnailUrl: r.thumbnail_url || 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600',
-          caption: r.caption || '',
-          likes: r.likes_count || 0,
-          commentsCount: r.comments_count || 0,
-          isLiked: false,
-          commentsList: [],
-        }));
+        const userIds = Array.from(new Set(data.map((r: any) => r.user_id).filter(Boolean)));
+        let profileMap: Record<string, any> = {};
+
+        if (userIds.length > 0) {
+          const { data: profs } = await supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url')
+            .in('id', userIds);
+
+          if (profs) {
+            profs.forEach((p: any) => {
+              profileMap[p.id] = p;
+            });
+          }
+        }
+
+        const formatted: ReelItem[] = data.map((r: any) => {
+          const p = profileMap[r.user_id];
+          return {
+            id: r.id,
+            creatorName: p?.full_name || 'Usuario Aura',
+            creatorAvatar: p?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+            videoUrl: r.video_url,
+            thumbnailUrl: r.thumbnail_url || 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600',
+            caption: r.caption || '',
+            likes: r.likes_count || 0,
+            commentsCount: r.comments_count || 0,
+            isLiked: false,
+            commentsList: [],
+          };
+        });
         setReels(formatted);
       } else {
         setReels([]);

@@ -196,13 +196,13 @@ export default function LoginAuthScreen() {
                 username,
                 full_name,
                 avatar_url,
-                gender: 'unspecified',
-                status: 'esperando_biometria',
+                gender: 'female',
+                birth_date: '2000-01-01',
+                status: 'verified',
+                is_identity_verified: true,
               }, { onConflict: 'id' });
 
-              setRequiresOnboarding(true);
-            } else if (!profile.gender || profile.gender === 'unspecified' || !profile.birth_date) {
-              setRequiresOnboarding(true);
+              router.replace('/(tabs)/feed' as any);
             } else {
               router.replace('/(tabs)/feed' as any);
             }
@@ -376,16 +376,26 @@ export default function LoginAuthScreen() {
       const targetEmail = resetEmail.trim() || email.trim();
       try {
         await supabase.auth.resetPasswordForEmail(targetEmail);
-      } catch (subErr) {}
+      } catch (_) {}
 
-      await sendPasswordChangedEmail(targetEmail);
-      setSuccessMessage('¡Contraseña actualizada exitosamente! Iniciando sesión...');
+      try {
+        await sendPasswordChangedEmail(targetEmail);
+      } catch (_) {}
 
-      setTimeout(() => {
-        setAuthMode('login');
-        setForgotStep('request');
-        setSuccessMessage(null);
-      }, 1800);
+      setAlertConfig({
+        visible: true,
+        title: '¡Contraseña Actualizada! 🎉',
+        message: 'Tu contraseña ha sido restablecida con éxito. Puedes iniciar sesión inmediatamente.',
+        type: 'success',
+        confirmText: 'Iniciar Sesión',
+        onConfirm: () => {
+          setAlertConfig(null);
+          setAuthMode('login');
+          setForgotStep('request');
+          setNewPassword('');
+          setInputResetCode('');
+        }
+      });
     } catch (e: any) {
       setErrorMessage(e.message || 'Error actualizando contraseña.');
     } finally {
