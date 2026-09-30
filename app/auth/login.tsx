@@ -196,10 +196,10 @@ export default function LoginAuthScreen() {
                 username,
                 full_name,
                 avatar_url,
-                gender: 'female',
+                gender: gender || 'female',
                 birth_date: '2000-01-01',
                 status: 'verified',
-                is_identity_verified: true,
+                is_identity_verified: false,
               }, { onConflict: 'id' });
 
               router.replace('/(tabs)/feed' as any);

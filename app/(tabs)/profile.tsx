@@ -48,8 +48,10 @@ export default function UserProfileScreen() {
     birth_date: string;
     bio: string;
     is_identity_verified: boolean;
-    is_agency: boolean;
-    is_superadmin: boolean;
+    is_agency?: boolean;
+    is_agency_account?: boolean;
+    is_streamer?: boolean;
+    is_superadmin?: boolean;
   } | null>(null);
 
   const [walletBalance, setWalletBalance] = useState(0);
@@ -63,6 +65,13 @@ export default function UserProfileScreen() {
   const [visitorsCount, setVisitorsCount] = useState(0);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [alertConfig, setAlertConfig] = useState<AuraAlertProps | null>(null);
+  const [activeProfileTab, setActiveProfileTab] = useState<'about' | 'honor'>('about');
+
+  // Agency Join by ID State
+  const [agencyJoinModalVisible, setAgencyJoinModalVisible] = useState(false);
+  const [inputAgencyCode, setInputAgencyCode] = useState('');
+  const [agencyRequestStatus, setAgencyRequestStatus] = useState<'none' | 'pending' | 'linked'>('none');
+  const [linkedAgencyId, setLinkedAgencyId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUserProfile();
@@ -96,8 +105,10 @@ export default function UserProfileScreen() {
           svip_level: 0,
           wealth_level: 0,
           photo_gallery: [],
-          is_identity_verified: true,
+          is_identity_verified: false,
           is_agency: false,
+          is_agency_account: false,
+          is_streamer: false,
           is_superadmin: false,
         };
         try {
@@ -108,7 +119,16 @@ export default function UserProfileScreen() {
       setProfile(pData);
       setSvipLevel(pData.svip_level || 0);
       setWealthLevel(pData.wealth_level || 0);
+      setCharismaLevel(pData.charisma_level || Math.floor((pData.charisma_experience || 0) / 1000) || 0);
       setPhotoGallery(pData.photo_gallery || []);
+
+      if (pData.agency_id) {
+        setAgencyRequestStatus('linked');
+        setLinkedAgencyId(pData.agency_id);
+      } else {
+        setAgencyRequestStatus('none');
+        setLinkedAgencyId(null);
+      }
 
       // Fetch Wallet safely
       try {
@@ -195,22 +215,27 @@ export default function UserProfileScreen() {
   const [addPhotoModalVisible, setAddPhotoModalVisible] = useState(false);
   const [newPhotoUrl, setNewPhotoUrl] = useState('');
   
-  const [agencyStatus, setAgencyStatus] = useState<'none' | 'pending' | 'approved'>(profile?.is_agency ? 'approved' : 'none');
+  const [agencyStatus, setAgencyStatus] = useState<'none' | 'pending' | 'approved'>(profile?.is_agency || profile?.is_agency_account ? 'approved' : 'none');
 
-  const isFemaleStreamer = profile?.gender === 'female';
-  const isAgency = profile?.is_agency || agencyStatus === 'approved';
+  const isAgency = Boolean(profile?.is_agency || profile?.is_agency_account || agencyStatus === 'approved');
+  const isFemaleStreamer = Boolean(profile?.is_streamer || profile?.gender === 'female');
+  const isSuperAdmin = Boolean(profile?.is_superadmin);
   
   let roleTitle = 'Usuario Estándar';
   let gradientColors = ['#1F2937', '#111827'];
   let roleIcon = <User size={12} color="#9CA3AF" />;
   
-  if (isAgency) {
+  if (isSuperAdmin) {
+    roleTitle = 'SuperAdmin Master';
+    gradientColors = ['#0369A1', '#111827'];
+    roleIcon = <ShieldCheck size={12} color="#00E5FF" />;
+  } else if (isAgency) {
     roleTitle = 'Agencia Certificada';
-    gradientColors = ['#451A03', '#111827']; // Amber/Gold dark
+    gradientColors = ['#451A03', '#111827'];
     roleIcon = <Building2 size={12} color="#F59E0B" />;
   } else if (isFemaleStreamer) {
     roleTitle = 'Presentadora Oficial';
-    gradientColors = ['#4C1D95', '#111827']; // Purple/Pink dark
+    gradientColors = ['#4C1D95', '#111827'];
     roleIcon = <Sparkles size={12} color="#FF007F" />;
   }
 
@@ -360,7 +385,18 @@ export default function UserProfileScreen() {
           p_face_signature_hash: res.hash,
         });
 
-        if (error) throw error;
+        if (error) {
+          setLivenessModalVisible(false);
+          setAlertConfig({
+            visible: true,
+            title: 'Verificación Facial Rechazada ⚠️',
+            message: 'Este rostro ya se encuentra vinculado a otra cuenta registrada anteriormente. La política de la plataforma prohíbe duplicar perfiles o registrar múltiples cuentas con la misma identidad facial.',
+            type: 'danger',
+            confirmText: 'Entendido',
+            onConfirm: () => setAlertConfig(null),
+          });
+          return;
+        }
 
         const genderLabel = profile.gender === 'female' ? 'Mujer ♀️' : 'Hombre ♂️';
 
@@ -371,14 +407,22 @@ export default function UserProfileScreen() {
         setAlertConfig({
           visible: true,
           title: '¡Verificación Facial Exitosa! 🎉',
-          message: `Identidad Humana Real Verificada (${genderLabel}). Tu rostro ha sido validado correctamente. ¡Se han acreditado +50 Monedas de recompensa a tu billetera y asignado la insignia VERIFICADO ✅!`,
+          message: `Identidad Humana Real Verificada (${genderLabel}). Tu rostro ha sido validado de forma única. ¡Se han acreditado +50 Monedas a tu billetera y asignado la insignia VERIFICADO ✅!`,
           type: 'success',
           confirmText: '¡Excelente!',
           onConfirm: () => setAlertConfig(null),
         });
       }
     } catch (e: any) {
-      Alert.alert('Error de Verificación', e.message || 'Fallo en el escaneo facial.');
+      setLivenessModalVisible(false);
+      setAlertConfig({
+        visible: true,
+        title: 'Error de Verificación ⚠️',
+        message: e.message || 'No se pudo completar la verificación facial biométrica.',
+        type: 'danger',
+        confirmText: 'Aceptar',
+        onConfirm: () => setAlertConfig(null),
+      });
     } finally {
       setScanningBiometrics(false);
     }
@@ -493,6 +537,11 @@ export default function UserProfileScreen() {
             </View>
 
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 8 }}>
+              <View style={{ backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12, borderWidth: 1, borderColor: isSuperAdmin ? '#00E5FF' : isAgency ? '#F59E0B' : isFemaleStreamer ? '#FF007F' : '#9CA3AF', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                {roleIcon}
+                <Text style={{ color: isSuperAdmin ? '#00E5FF' : isAgency ? '#F59E0B' : isFemaleStreamer ? '#FF007F' : '#9CA3AF', fontWeight: '900', fontSize: 10 }}>{roleTitle.toUpperCase()}</Text>
+              </View>
+
               {(profile.status === 'verified' || profile.is_identity_verified) && (
                 <View style={{ backgroundColor: 'rgba(52,211,153,0.2)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12, borderWidth: 1, borderColor: '#34D399', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <CheckCircle2 size={12} color="#34D399" />
@@ -500,9 +549,9 @@ export default function UserProfileScreen() {
                 </View>
               )}
 
-              {cloverBalance > 0 && (
+              {!profile?.clover_gift_sent && !profile?.has_recharged && (
                 <View style={{ backgroundColor: 'rgba(34,197,94,0.15)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12, borderWidth: 1, borderColor: '#22C55E', flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Text style={{ color: '#22C55E', fontWeight: '900', fontSize: 10 }}>NUEVO 🍀</Text>
+                  <Text style={{ color: '#22C55E', fontWeight: '900', fontSize: 10 }}>NUEVO 🌟</Text>
                 </View>
               )}
             </View>
@@ -548,21 +597,51 @@ export default function UserProfileScreen() {
             </View>
           </View>
 
-          {/* Bio Section */}
-          <View style={{ flexDirection: 'row', paddingHorizontal: 16, marginBottom: 16, justifyContent: 'space-between', alignItems: 'center' }}>
-             <View>
-                <Text style={{ color: '#FFF', fontSize: 16, fontWeight: 'bold' }}>Sobre mí</Text>
-                <View style={{ height: 3, width: 20, backgroundColor: '#FF007F', marginTop: 4, borderRadius: 2 }} />
-             </View>
-             <TouchableOpacity onPress={() => { setNewBio(profile.bio || ''); setEditBioModal(true); }}>
-                <Text style={{ color: '#3B82F6', fontSize: 12, fontWeight: 'bold' }}>Editar ✏️</Text>
-             </TouchableOpacity>
+          {/* Tabs: Sobre mí | Muro de Honor (Matching frame_010) */}
+          <View style={{ flexDirection: 'row', paddingHorizontal: 16, marginBottom: 16, borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.1)', gap: 24 }}>
+            <TouchableOpacity onPress={() => setActiveProfileTab('about')} style={{ paddingBottom: 8, borderBottomWidth: 2.5, borderColor: activeProfileTab === 'about' ? '#FF007F' : 'transparent' }}>
+              <Text style={{ color: activeProfileTab === 'about' ? '#FFF' : '#9CA3AF', fontSize: 15, fontWeight: '900' }}>Sobre mí</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => setActiveProfileTab('honor')} style={{ paddingBottom: 8, borderBottomWidth: 2.5, borderColor: activeProfileTab === 'honor' ? '#FFD700' : 'transparent' }}>
+              <Text style={{ color: activeProfileTab === 'honor' ? '#FFD700' : '#9CA3AF', fontSize: 15, fontWeight: '900' }}>Muro de Honor 🏆</Text>
+            </TouchableOpacity>
           </View>
-          <View style={{ paddingHorizontal: 16, marginBottom: 24 }}>
-             <Text style={{ color: '#9CA3AF', fontSize: 13, lineHeight: 20, textAlign: 'center' }}>
-               {profile.bio || 'Sin descripción aún. Escribe algo sobre ti...'}
-             </Text>
-          </View>
+
+          {activeProfileTab === 'about' ? (
+            <>
+              <View style={{ flexDirection: 'row', paddingHorizontal: 16, marginBottom: 8, justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ color: '#9CA3AF', fontSize: 11, fontWeight: '700', textTransform: 'uppercase' }}>Biografía</Text>
+                <TouchableOpacity onPress={() => { setNewBio(profile.bio || ''); setEditBioModal(true); }}>
+                  <Text style={{ color: '#3B82F6', fontSize: 12, fontWeight: 'bold' }}>Editar ✏️</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={{ paddingHorizontal: 16, marginBottom: 20 }}>
+                <Text style={{ color: '#D1D5DB', fontSize: 13, lineHeight: 20 }}>
+                  {profile.bio || 'Sin descripción aún. Escribe algo sobre ti...'}
+                </Text>
+              </View>
+            </>
+          ) : (
+            <View style={{ paddingHorizontal: 16, marginBottom: 20 }}>
+              <Text style={{ color: '#9CA3AF', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', marginBottom: 10 }}>Top Donadores & Contribuyentes 👑</Text>
+              <View style={{ gap: 8 }}>
+                {[
+                  { name: 'Alex VIP 👑', coins: '125,000', badge: '🥇 Top 1', color: '#FFD700' },
+                  { name: 'Carlos Cyber 💎', coins: '82,400', badge: '🥈 Top 2', color: '#C0C0C0' },
+                  { name: 'Lucia Star 💖', coins: '41,100', badge: '🥉 Top 3', color: '#CD7F32' },
+                ].map((don, idx) => (
+                  <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,0.05)', padding: 12, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <Text style={{ color: don.color, fontWeight: '900', fontSize: 12 }}>{don.badge}</Text>
+                      <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 13 }}>{don.name}</Text>
+                    </View>
+                    <Text style={{ color: '#F59E0B', fontWeight: '900', fontSize: 12 }}>{don.coins} 🪙</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
 
           {/* Wallets Cards (Auras solo para Presentadoras Mujeres o Agencias Certificadas) */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20, gap: 12 }}>
@@ -673,6 +752,33 @@ export default function UserProfileScreen() {
             </ScrollView>
           </View>
 
+          {/* Banner Obligatorio de Enlace a Agencia (Solo visible si NO está enlazada) */}
+          {isFemaleStreamer && !isAgency && agencyRequestStatus !== 'linked' && (
+            <TouchableOpacity
+              onPress={() => setAgencyJoinModalVisible(true)}
+              style={{ marginBottom: 16 }}
+            >
+              <LinearGradient colors={['#7C2D12', '#1F2937']} style={{ padding: 16, borderRadius: 20, borderWidth: 1.5, borderColor: '#F59E0B' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                  <Building2 size={22} color="#F59E0B" />
+                  <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 14 }}>
+                    Unirse a una Agencia Obligatorio 🏢
+                  </Text>
+                </View>
+                <Text style={{ color: '#D1D5DB', fontSize: 11, lineHeight: 17, marginBottom: 10 }}>
+                  {agencyRequestStatus === 'pending'
+                    ? '⚠️ Solicitud enviada a la Agencia. Esperando que el Agente acepte tu ID para activar tu Panel y Metas.'
+                    : 'Debes ingresar el ID de una Agencia Oficial para enlazarte y solicitar la activación de tu perfil de presentadora y metas de monetización.'}
+                </Text>
+                <View style={{ backgroundColor: '#F59E0B', paddingVertical: 10, borderRadius: 14, alignItems: 'center' }}>
+                  <Text style={{ color: '#000', fontWeight: '900', fontSize: 12, textTransform: 'uppercase' }}>
+                    {agencyRequestStatus === 'pending' ? 'Solicitud Pendiente ⏳' : 'Ingresar ID de Agencia 🏢'}
+                  </Text>
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+
           {/* Menu Navigation Items */}
           <View style={{ backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 24, padding: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', marginBottom: 20, gap: 8 }}>
             
@@ -731,7 +837,8 @@ export default function UserProfileScreen() {
               </TouchableOpacity>
             )}
 
-            {(isFemaleStreamer || isAgency) && (
+            {/* Panel de Presentadora (SOLO visible si es Presentadora Y YA ESTÁ ENLAZADA por la agencia) */}
+            {(isFemaleStreamer || isAgency) && (agencyRequestStatus === 'linked' || isAgency) && (
               <TouchableOpacity onPress={() => router.push('/streamer/dashboard' as any)}>
                 <LinearGradient
                   colors={['#831843', '#1F2937']}
@@ -818,6 +925,28 @@ export default function UserProfileScreen() {
               <Text style={{ color: '#FFD700', fontSize: 11, fontWeight: '800', marginTop: 6 }}>
                 = Monedas a Recibir: +{(parseInt(aurasToExchange || '0', 10) * 100).toLocaleString()} 🪙
               </Text>
+            </View>
+
+            {/* Quick Exchange Presets Matching frame_015 */}
+            <Text style={{ color: '#9CA3AF', fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginBottom: 8 }}>Canje Rápido:</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+              {[
+                { auras: 1, coins: 100 },
+                { auras: 5, coins: 500 },
+                { auras: 10, coins: 1000 },
+                { auras: 50, coins: 5000 },
+                { auras: 100, coins: 10000 },
+                { auras: 500, coins: 50000 },
+              ].map(p => (
+                <TouchableOpacity
+                  key={p.auras}
+                  onPress={() => setAurasToExchange(p.auras.toString())}
+                  style={{ width: '31%', backgroundColor: aurasToExchange === p.auras.toString() ? '#A855F7' : 'rgba(255,255,255,0.06)', borderRadius: 12, padding: 8, alignItems: 'center', borderWidth: 1, borderColor: aurasToExchange === p.auras.toString() ? '#FFF' : 'rgba(168,85,247,0.2)' }}
+                >
+                  <Text style={{ color: '#FFD700', fontWeight: '900', fontSize: 11 }}>+{p.coins.toLocaleString()} 🪙</Text>
+                  <Text style={{ color: aurasToExchange === p.auras.toString() ? '#FFF' : '#C084FC', fontSize: 9, fontWeight: '800', marginTop: 2 }}>{p.auras} 🔮</Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
             <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -979,6 +1108,59 @@ export default function UserProfileScreen() {
                 </LinearGradient>
               </TouchableOpacity>
             )}
+          </LinearGradient>
+        </View>
+      </Modal>
+
+      {/* 🏢 MODAL PARA INGRESAR ID DE AGENCIA Y SOLICITAR INGRESO 🏢 */}
+      <Modal visible={agencyJoinModalVisible} transparent animationType="slide">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 }}>
+          <LinearGradient colors={['#1E1B4B', '#020617']} style={{ width: '100%', maxWidth: 360, borderRadius: 24, padding: 24, borderWidth: 1.5, borderColor: '#F59E0B' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Building2 size={22} color="#F59E0B" />
+                <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 16 }}>Unirse a una Agencia 🏢</Text>
+              </View>
+              <TouchableOpacity onPress={() => setAgencyJoinModalVisible(false)} style={{ padding: 4 }}>
+                <X size={20} color="#9CA3AF" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ color: '#D1D5DB', fontSize: 12, lineHeight: 18, marginBottom: 16 }}>
+              Ingresa el <Text style={{ color: '#F59E0B', fontWeight: 'bold' }}>ID / Código de Invitación</Text> ofical de la Agencia para enlazarte. Una vez que el Agente acepte tu solicitud, tu Panel de Presentadora se activará.
+            </Text>
+
+            <TextInput
+              value={inputAgencyCode}
+              onChangeText={setInputAgencyCode}
+              placeholder="Ejemplo: AGENCY-101"
+              placeholderTextColor="#6B7280"
+              style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.5)', borderRadius: 16, padding: 14, color: '#FFF', fontWeight: '800', fontSize: 14, marginBottom: 20 }}
+            />
+
+            <TouchableOpacity
+              onPress={() => {
+                if (!inputAgencyCode.trim()) {
+                  Alert.alert('ID Requerido', 'Por favor ingresa el ID o Código de la Agencia.');
+                  return;
+                }
+                setAgencyRequestStatus('pending');
+                setAgencyJoinModalVisible(false);
+                setAlertConfig({
+                  visible: true,
+                  title: 'Solicitud Enviada 🏢',
+                  message: `Has enviado la solicitud de vinculación a la Agencia ${inputAgencyCode}. Una vez que la agencia la apruebe en su panel, tu Panel de Presentadora y Metas se activarán automáticamente.`,
+                  type: 'success',
+                  confirmText: 'Entendido',
+                  onConfirm: () => setAlertConfig(null)
+                });
+              }}
+              style={{ borderRadius: 18, overflow: 'hidden' }}
+            >
+              <LinearGradient colors={['#F59E0B', '#D97706']} style={{ paddingVertical: 14, alignItems: 'center' }}>
+                <Text style={{ color: '#000', fontWeight: '900', fontSize: 13, textTransform: 'uppercase' }}>Enviar Solicitud a la Agencia 🚀</Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </LinearGradient>
         </View>
       </Modal>

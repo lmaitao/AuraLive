@@ -50,6 +50,9 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     svip_maintenance_points BIGINT DEFAULT 0,
     wealth_level INT DEFAULT 0,
     wealth_experience BIGINT DEFAULT 0,
+    charisma_level INT DEFAULT 0,
+    charisma_experience BIGINT DEFAULT 0,
+    has_recharged BOOLEAN DEFAULT FALSE,
     last_seen TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -119,7 +122,7 @@ CREATE TABLE IF NOT EXISTS public.wallets (
     user_id UUID UNIQUE NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     coin_balance BIGINT DEFAULT 1000 CHECK (coin_balance >= 0),
     aura_balance BIGINT DEFAULT 0 CHECK (aura_balance >= 0),
-    clover_balance INT DEFAULT 3 CHECK (clover_balance >= 0),
+    clover_balance INT DEFAULT 1 CHECK (clover_balance >= 0),
     has_recharged BOOLEAN DEFAULT FALSE,
     last_daily_checkin TIMESTAMPTZ,
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -239,6 +242,20 @@ CREATE TABLE IF NOT EXISTS public.support_tickets (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ============================================================================
+-- 16. TABLA: MENSAJES DE CHAT EN SALAS EN VIVO (TIEMPO REAL)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.chat_messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    room_id VARCHAR(255) NOT NULL,
+    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    sender_name VARCHAR(255),
+    sender_avatar TEXT,
+    message TEXT NOT NULL,
+    is_censored BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 
 -- ============================================================================
 -- BUCKET DE ALMACENAMIENTO DE REELS (SUPABASE STORAGE)
@@ -289,8 +306,8 @@ BEGIN
     COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', 'Usuario Aura'),
     COALESCE(NEW.raw_user_meta_data->>'avatar_url', NEW.raw_user_meta_data->>'picture', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400'),
     'female',
-    'verified',
-    TRUE
+    'esperando_biometria',
+    FALSE
   )
   ON CONFLICT (id) DO NOTHING;
 
@@ -346,7 +363,7 @@ END;
 $$;
 
 
--- D) Proceso de envío de regalo virtual (Plataforma 50% / Presentadora 40% / Agencia 10%)
+-- D) Proceso de envío de regalo virtual (Dueño App 50% / Presentadora Neto 45% / Agencia 5% descontado del 50% de la presentadora)
 CREATE OR REPLACE FUNCTION public.send_gift(
     p_sender_id UUID,
     p_receptor_id UUID,
@@ -391,13 +408,43 @@ BEGIN
         UPDATE public.profiles SET clover_gift_sent = TRUE WHERE id = p_sender_id;
     END IF;
 
+    -- LÓGICA DE MONETIZACIÓN:
+    -- 50% Dueño de la App (SuperAdmin)
+    -- 50% Presentadora, del cual se descuenta 5% para la Agencia (Neto Presentadora: 45%)
     v_platform_coins := (COALESCE(v_gift.coin_price, 0) * 50) / 100;
-    v_streamer_coins := (COALESCE(v_gift.coin_price, 0) * 40) / 100;
-    v_agency_coins   := (COALESCE(v_gift.coin_price, 0) * 10) / 100;
+    v_agency_coins   := (COALESCE(v_gift.coin_price, 0) * 5) / 100;
+    v_streamer_coins := (COALESCE(v_gift.coin_price, 0) * 45) / 100;
+
+    IF v_receptor.agency_id IS NOT NULL THEN
+        SELECT owner_id INTO v_agency_owner_id FROM public.agencies WHERE id = v_receptor.agency_id;
+    END IF;
 
     IF v_sender_wallet IS NOT NULL AND COALESCE(v_gift.coin_price, 0) > 0 THEN
         UPDATE public.wallets SET coin_balance = coin_balance - v_gift.coin_price WHERE user_id = p_sender_id;
         UPDATE public.wallets SET aura_balance = aura_balance + v_streamer_coins WHERE user_id = p_receptor_id;
+
+        -- Incrementar Nivel de Riqueza (Monedas enviadas por el usuario)
+        UPDATE public.profiles
+        SET wealth_experience = COALESCE(wealth_experience, 0) + v_gift.coin_price,
+            wealth_level = LEAST(50, FLOOR((COALESCE(wealth_experience, 0) + v_gift.coin_price) / 1000)::INT)
+        WHERE id = p_sender_id;
+
+        -- Incrementar Nivel de Carisma (Regalos recibidos por la presentadora)
+        UPDATE public.profiles
+        SET charisma_experience = COALESCE(charisma_experience, 0) + v_gift.coin_price,
+            charisma_level = LEAST(50, FLOOR((COALESCE(charisma_experience, 0) + v_gift.coin_price) / 1000)::INT)
+        WHERE id = p_receptor_id;
+
+        IF v_agency_owner_id IS NOT NULL AND v_agency_coins > 0 THEN
+            UPDATE public.wallets SET aura_balance = aura_balance + v_agency_coins WHERE user_id = v_agency_owner_id;
+        ELSE
+            v_platform_coins := v_platform_coins + v_agency_coins;
+        END IF;
+
+        SELECT id INTO v_superadmin_id FROM public.profiles WHERE is_superadmin = TRUE LIMIT 1;
+        IF v_superadmin_id IS NOT NULL AND v_platform_coins > 0 THEN
+            UPDATE public.wallets SET aura_balance = aura_balance + v_platform_coins WHERE user_id = v_superadmin_id;
+        END IF;
     END IF;
 
     RETURN jsonb_build_object(
@@ -407,6 +454,49 @@ BEGIN
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
+-- E) RPC: Verificación Facial Biométrica Única (1 Rostro = 1 Cuenta Única Antifraude)
+CREATE OR REPLACE FUNCTION public.liveness_verify(
+    p_user_id UUID,
+    p_face_signature_hash VARCHAR(255)
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_existing_profile RECORD;
+BEGIN
+    -- 1. Verificar si la firma biométrica facial ya pertenece a OTRA cuenta activa
+    SELECT id, email INTO v_existing_profile
+    FROM public.profiles 
+    WHERE face_signature_hash = p_face_signature_hash 
+      AND id != p_user_id 
+    LIMIT 1;
+
+    IF v_existing_profile.id IS NOT NULL THEN
+        RAISE EXCEPTION '⚠️ Este rostro ya fue registrado previamente en otra cuenta (%). La política de la plataforma prohíbe crear múltiples cuentas con la misma identidad facial.', v_existing_profile.email;
+    END IF;
+
+    -- 2. Registrar la firma biométrica única y verificar la cuenta
+    UPDATE public.profiles 
+    SET face_signature_hash = p_face_signature_hash,
+        is_identity_verified = TRUE,
+        status = 'verified'
+    WHERE id = p_user_id;
+
+    -- 3. Otorgar recompensa de +50 monedas virtuales
+    UPDATE public.wallets 
+    SET coin_balance = coin_balance + 50 
+    WHERE user_id = p_user_id;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'message', 'Identidad humana real verificada. Firma biométrica vinculada de forma única a tu cuenta.'
+    );
+END;
+$$;
 
 
 -- ============================================================================

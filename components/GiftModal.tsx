@@ -17,13 +17,14 @@ export interface GiftItem {
 }
 
 const DEFAULT_GIFTS: GiftItem[] = [
-  { id: 'clover-pack-3', name: 'Pack 3 Tréboles 🍀', coinPrice: 0, iconUrl: 'https://cdn-icons-png.flaticon.com/512/346/346195.png', lottieUrl: 'https://lottie.host/8c1303ed-7cfa-4ebf-801a-8ff6cc6eb2c2/2O0p2c34kK.json', isExclusive: false, category: 'Popular' },
-  { id: '1', name: 'Rosa Neón', coinPrice: 10, iconUrl: 'https://cdn-icons-png.flaticon.com/512/3004/3004071.png', lottieUrl: 'https://lottie.host/8c1303ed-7cfa-4ebf-801a-8ff6cc6eb2c2/2O0p2c34kK.json', isExclusive: false, category: 'Popular' },
-  { id: '2', name: 'Beso Cyber', coinPrice: 50, iconUrl: 'https://cdn-icons-png.flaticon.com/512/2850/2850550.png', lottieUrl: 'https://lottie.host/80769d49-411a-42cd-bb43-7f72295240c5/Z5f5u9bN0S.json', isExclusive: false, category: 'Popular' },
-  { id: '3', name: 'Corona Diamante', coinPrice: 500, iconUrl: 'https://cdn-icons-png.flaticon.com/512/714/714407.png', lottieUrl: 'https://lottie.host/17e5a7b6-cc7d-417d-bebb-42df6495d4d3/7oG9Y8N4uH.json', isExclusive: false, category: 'Lujo' },
-  { id: '4', name: 'Nave Espacial', coinPrice: 1000, iconUrl: 'https://cdn-icons-png.flaticon.com/512/3255/3255057.png', lottieUrl: 'https://lottie.host/98c5d14e-d98c-447b-83de-ec5c0d5926be/lI1f4Ww7N4.json', isExclusive: false, category: 'Lujo' },
-  { id: '5', name: 'Dragón Legendario', coinPrice: 5000, iconUrl: 'https://cdn-icons-png.flaticon.com/512/5725/5725514.png', lottieUrl: 'https://lottie.host/95d82998-1cd5-46eb-81c8-db28b9c647b0/Xz4x2hO4YI.json', isExclusive: true, category: 'VIP' },
-  { id: '6', name: 'Auto Lujo 3D', coinPrice: 10000, iconUrl: 'https://cdn-icons-png.flaticon.com/512/3204/3204918.png', lottieUrl: 'https://lottie.host/e2d08a50-6eb6-4556-9130-1c667a4214f5/H8S3p4Z7P2.json', isExclusive: true, category: 'VIP' },
+  { id: 'clover-welcome-1', name: 'Trébol Dorado 🍀 (1 Gratis 24h)', coinPrice: 300, iconUrl: 'https://cdn-icons-png.flaticon.com/512/346/346195.png', lottieUrl: 'https://lottie.host/8c1303ed-7cfa-4ebf-801a-8ff6cc6eb2c2/2O0p2c34kK.json', isExclusive: false, category: 'Popular' },
+  { id: '1', name: 'Rosa Neón 🌹', coinPrice: 100, iconUrl: 'https://cdn-icons-png.flaticon.com/512/3004/3004071.png', lottieUrl: 'https://lottie.host/8c1303ed-7cfa-4ebf-801a-8ff6cc6eb2c2/2O0p2c34kK.json', isExclusive: false, category: 'Popular' },
+  { id: '2', name: 'Beso Cyber 💋', coinPrice: 300, iconUrl: 'https://cdn-icons-png.flaticon.com/512/2850/2850550.png', lottieUrl: 'https://lottie.host/80769d49-411a-42cd-bb43-7f72295240c5/Z5f5u9bN0S.json', isExclusive: false, category: 'Popular' },
+  { id: '3', name: 'Corona Diamante 👑', coinPrice: 1000, iconUrl: 'https://cdn-icons-png.flaticon.com/512/714/714407.png', lottieUrl: 'https://lottie.host/17e5a7b6-cc7d-417d-bebb-42df6495d4d3/7oG9Y8N4uH.json', isExclusive: false, category: 'Lujo' },
+  { id: '4', name: 'Nave Espacial 🚀', coinPrice: 5000, iconUrl: 'https://cdn-icons-png.flaticon.com/512/3255/3255057.png', lottieUrl: 'https://lottie.host/98c5d14e-d98c-447b-83de-ec5c0d5926be/lI1f4Ww7N4.json', isExclusive: false, category: 'Lujo' },
+  { id: '5', name: 'Dragón Legendario 🐉', coinPrice: 20000, iconUrl: 'https://cdn-icons-png.flaticon.com/512/5725/5725514.png', lottieUrl: 'https://lottie.host/95d82998-1cd5-46eb-81c8-db28b9c647b0/Xz4x2hO4YI.json', isExclusive: true, category: 'VIP' },
+  { id: '6', name: 'Auto Lujo 3D 🏎️', coinPrice: 50000, iconUrl: 'https://cdn-icons-png.flaticon.com/512/3204/3204918.png', lottieUrl: 'https://lottie.host/e2d08a50-6eb6-4556-9130-1c667a4214f5/H8S3p4Z7P2.json', isExclusive: true, category: 'VIP' },
+  { id: '7', name: 'Universo Aura 🌌 ($200 USD)', coinPrice: 200000, iconUrl: 'https://cdn-icons-png.flaticon.com/512/3204/3204918.png', lottieUrl: 'https://lottie.host/e2d08a50-6eb6-4556-9130-1c667a4214f5/H8S3p4Z7P2.json', isExclusive: true, category: 'VIP' },
 ];
 
 interface GiftModalProps {
@@ -58,17 +59,40 @@ export const GiftModal: React.FC<GiftModalProps> = ({
     if (!selectedGift) return;
     setErrorMessage(null);
 
-    if (senderCoins < selectedGift.coinPrice) {
-      setErrorMessage('Saldo insuficiente. Recarga monedas en la tienda.');
+    if (senderId && receptorId && senderId === receptorId) {
+      setErrorMessage('No puedes enviarte regalos a ti mismo. Elige a otro participante de la sala.');
       return;
     }
 
-    if (selectedGift.id === 'clover-pack-3') {
+    // Regla Trébol Dorado: 1 Gratis al registrarse (activado a las 24h), luego 300 Monedas cada uno
+    let effectivePrice = selectedGift.coinPrice;
+    if (selectedGift.id === 'clover-welcome-1') {
       try {
-        await supabase.from('profiles').update({ clover_gift_sent: true }).eq('id', senderId);
+        const { data: profile } = await supabase.from('profiles').select('created_at, clover_gift_sent').eq('id', senderId).single();
+        if (profile) {
+          if (!profile.clover_gift_sent) {
+            const createdDate = new Date(profile.created_at || Date.now());
+            const hoursPassed = (Date.now() - createdDate.getTime()) / (1000 * 60 * 60);
+
+            if (hoursPassed < 24) {
+              const hoursLeft = Math.ceil(24 - hoursPassed);
+              setErrorMessage(`Tu Trébol Dorado Gratuito 🍀 se activará automáticamente al cumplir 24h de registro (Faltan ~${hoursLeft}h). Puedes comprar uno por 300 monedas.`);
+              if (senderCoins < 300) return;
+            } else {
+              // Es el trébol gratuito
+              effectivePrice = 0;
+              await supabase.from('profiles').update({ clover_gift_sent: true }).eq('id', senderId);
+            }
+          }
+        }
       } catch (e) {
-        console.log('Error updating clover_gift_sent:', e);
+        console.log('Error verifying welcome clover activation:', e);
       }
+    }
+
+    if (senderCoins < effectivePrice) {
+      setErrorMessage(`Saldo insuficiente. Un Trébol Dorado cuesta 300 Monedas.`);
+      return;
     }
 
     setLoading(true);
@@ -80,8 +104,8 @@ export const GiftModal: React.FC<GiftModalProps> = ({
       });
 
       if (error) {
-        const newBal = senderCoins - selectedGift.coinPrice;
-        onGiftSentSuccess(newBal, selectedGift);
+        const newBal = senderCoins - effectivePrice;
+        onGiftSentSuccess(newBal, { ...selectedGift, coinPrice: effectivePrice });
         setAlertConfig({
           visible: true,
           title: "¡Regalo Enviado! 🎁",

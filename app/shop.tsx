@@ -15,14 +15,16 @@ export interface CoinPackage {
   bonusCoins: number;
   usdPrice: number;
   popular?: boolean;
+  isMax?: boolean;
 }
 
 const PACKAGES: CoinPackage[] = [
-  { id: 'pkg-1', coins: 100, bonusCoins: 15, usdPrice: 0.99 },
-  { id: 'pkg-2', coins: 500, bonusCoins: 100, usdPrice: 4.99, popular: true },
-  { id: 'pkg-3', coins: 1200, bonusCoins: 300, usdPrice: 9.99 },
-  { id: 'pkg-4', coins: 6500, bonusCoins: 1800, usdPrice: 49.99, popular: true },
-  { id: 'pkg-5', coins: 15000, bonusCoins: 5000, usdPrice: 99.99 },
+  { id: 'pkg-5usd',   coins: 5000,   bonusCoins: 250,   usdPrice: 5 },
+  { id: 'pkg-10usd',  coins: 10000,  bonusCoins: 1000,  usdPrice: 10 },
+  { id: 'pkg-20usd',  coins: 20000,  bonusCoins: 3000,  usdPrice: 20, popular: true },
+  { id: 'pkg-50usd',  coins: 50000,  bonusCoins: 10000, usdPrice: 50 },
+  { id: 'pkg-100usd', coins: 100000, bonusCoins: 25000, usdPrice: 100, popular: true },
+  { id: 'pkg-200usd', coins: 200000, bonusCoins: 60000, usdPrice: 200, isMax: true },
 ];
 
 export default function ShopScreen() {
@@ -30,14 +32,15 @@ export default function ShopScreen() {
   const router = useRouter();
 
   const [selectedGateway, setSelectedGateway] = useState<'paypal' | 'binance' | 'google_play' | 'stripe'>('paypal');
-  const [selectedPkg, setSelectedPkg] = useState<CoinPackage>(PACKAGES[1]);
+  const [selectedPkg, setSelectedPkg] = useState<CoinPackage>(PACKAGES[0]);
   const [loading, setLoading] = useState(false);
-  const [currentBalance, setCurrentBalance] = useState(1500);
+  const [currentBalance, setCurrentBalance] = useState(0);
 
   const coinPulse = useSharedValue(1);
   const auraScale = useSharedValue(1);
 
   useEffect(() => {
+    loadBalance();
     coinPulse.value = withRepeat(
       withTiming(1.2, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
       -1,
@@ -50,6 +53,15 @@ export default function ShopScreen() {
     );
   }, []);
 
+  const loadBalance = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: wallet } = await supabase.from('wallets').select('coin_balance').eq('user_id', user.id).single();
+      if (wallet) setCurrentBalance(wallet.coin_balance);
+    } catch (_) {}
+  };
+
   const animatedCoinStyle = useAnimatedStyle(() => ({
     transform: [{ scale: coinPulse.value }],
   }));
@@ -61,36 +73,34 @@ export default function ShopScreen() {
   const handlePurchase = async () => {
     setLoading(true);
     try {
-      const mockToken = `TOKEN_${selectedGateway.toUpperCase()}_${Date.now()}`;
+      const { data: { user } } = await supabase.auth.getUser();
       const totalCoins = selectedPkg.coins + selectedPkg.bonusCoins;
 
-      const { data, error } = await supabase.rpc('process_refill', {
-        p_user_id: 'user-me-123',
-        p_coin_amount: totalCoins,
-        p_gateway: selectedGateway,
-        p_transaction_token: mockToken,
-      });
+      if (user) {
+        // 1. Acreditar monedas a la billetera real
+        const { data: wallet } = await supabase.from('wallets').select('coin_balance').eq('user_id', user.id).single();
+        const currentBal = wallet?.coin_balance || 0;
+        const newBal = currentBal + totalCoins;
+
+        await supabase.from('wallets').update({ coin_balance: newBal }).eq('user_id', user.id);
+        
+        // 2. Marcar que ha realizado recarga (remueve la insignia NUEVO de su perfil)
+        await supabase.from('profiles').update({ has_recharged: true }).eq('id', user.id);
+
+        setCurrentBalance(newBal);
+      } else {
+        setCurrentBalance(prev => prev + totalCoins);
+      }
 
       const gatewayLabel = 
         selectedGateway === 'paypal' ? 'PayPal Instant' :
         selectedGateway === 'binance' ? 'Binance Pay' :
         selectedGateway === 'google_play' ? 'Google / Apple Pay' : 'Stripe Tarjetas';
 
-      if (error) {
-        // Fallback local update if RPC hasn't been applied on Supabase DB
-        setCurrentBalance((prev) => prev + totalCoins);
-        Alert.alert(
-          '¡Recarga Exitosa! 🎉',
-          `Se han acreditado +${totalCoins.toLocaleString()} Monedas a tu cuenta mediante ${gatewayLabel}.`
-        );
-      } else {
-        const added = data?.coins_added ?? totalCoins;
-        setCurrentBalance((prev) => prev + added);
-        Alert.alert(
-          '¡Recarga Exitosa! 🎉',
-          `Se han acreditado +${added.toLocaleString()} Monedas a tu cuenta mediante ${gatewayLabel}.`
-        );
-      }
+      Alert.alert(
+        '¡Recarga Exitosa! 🎉',
+        `Se han acreditado +${totalCoins.toLocaleString()} Monedas a tu cuenta mediante ${gatewayLabel}.`
+      );
     } catch (err: any) {
       Alert.alert('Error de Pago', err.message || 'Fallo de conexión.');
     } finally {
@@ -207,6 +217,11 @@ export default function ShopScreen() {
                   {pkg.popular && (
                     <View style={styles.popularBadge}>
                       <Text style={{ color: '#000', fontSize: 8, fontWeight: '900' }}>MÁS POPULAR 🔥</Text>
+                    </View>
+                  )}
+                  {pkg.isMax && (
+                    <View style={[styles.popularBadge, { backgroundColor: '#EC4899' }]}>
+                      <Text style={{ color: '#FFF', fontSize: 8, fontWeight: '900' }}>RECARGA MÁXIMA $200 🌌</Text>
                     </View>
                   )}
 

@@ -55,12 +55,12 @@ export const CameraGrid4: React.FC<CameraGrid4Props> = ({
               key={p.id || `empty-${idx}`}
               activeOpacity={0.8}
               onPress={() => onOccupySeat && onOccupySeat(p.id)}
-              style={{ width: '48%', aspectRatio: 1, marginBottom: 8 }}
+              style={{ width: '48.5%', aspectRatio: 0.78, marginBottom: 10 }}
             >
               <View style={styles.emptySlotBorder}>
                 <View style={styles.emptySlotInner}>
                   <View style={styles.plusIconCircle}>
-                    <UserPlus size={22} color="#00E5FF" />
+                    <UserPlus size={26} color="#00E5FF" />
                   </View>
                   <Text style={styles.emptySeatTitle}>Puesto #{idx + 1}</Text>
                   <Text style={styles.emptySeatSubtext}>Toca para Subir 🎙️</Text>
@@ -75,7 +75,7 @@ export const CameraGrid4: React.FC<CameraGrid4Props> = ({
             key={p.id}
             activeOpacity={0.9}
             onPress={() => onSelectUser && onSelectUser({ id: p.id, name: p.name, avatarUrl: p.avatarUrl })}
-            style={{ width: '48%', aspectRatio: 1, marginBottom: 8 }}
+            style={{ width: '48.5%', aspectRatio: 0.78, marginBottom: 10 }}
           >
             <LinearGradient
               colors={isHostSlot ? ['#00E5FF', '#0284C7', '#FF007F'] : ['#FF007F', '#8B5CF6', '#101018']}
@@ -88,7 +88,7 @@ export const CameraGrid4: React.FC<CameraGrid4Props> = ({
                   <CameraView style={StyleSheet.absoluteFillObject} facing="front" mute={!micActive} />
                 ) : p.isVideoFrozen ? (
                   <View style={styles.frozenBox}>
-                    <VideoOff size={22} color="#FF007F" />
+                    <VideoOff size={26} color="#FF007F" />
                     <Text style={styles.frozenText}>Congelada</Text>
                   </View>
                 ) : (
@@ -97,32 +97,18 @@ export const CameraGrid4: React.FC<CameraGrid4Props> = ({
                     <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent']} style={styles.topGradientOverlay} />
                     <View style={styles.liveBadge}>
                       <View style={styles.liveDot} />
-                      <Text style={styles.liveBadgeText}>{isHostSlot ? 'HOST' : 'EN VIVO'}</Text>
+                      <Text style={styles.liveBadgeText}>{isHostSlot ? 'HOST 👑' : 'EN VIVO'}</Text>
+                    </View>
+                    <View style={[styles.micPillBadge, { backgroundColor: p.isMuted ? 'rgba(239, 68, 68, 0.85)' : 'rgba(16, 185, 129, 0.85)' }]}>
+                      {p.isMuted ? <MicOff size={10} color="#FFF" /> : <Mic size={10} color="#FFF" />}
+                    </View>
+
+                    <View style={styles.participantLabelBar}>
+                      <Image source={{ uri: p.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400' }} style={styles.miniAvatar} />
+                      <Text style={styles.participantName} numberOfLines={1}>{p.name}</Text>
                     </View>
                   </View>
                 )}
-
-                {/* Interactive Mic Button */}
-                <TouchableOpacity
-                  onPress={() => onToggleMute(p.id)}
-                  activeOpacity={0.8}
-                  style={[
-                    styles.micPillBadge,
-                    { backgroundColor: p.isMuted ? 'rgba(239, 68, 68, 0.9)' : 'rgba(0, 229, 255, 0.9)' },
-                  ]}
-                >
-                  {p.isMuted ? <MicOff size={10} color="#FFF" /> : <Mic size={10} color="#000" />}
-                  <Text style={{ color: p.isMuted ? '#FFF' : '#000', fontSize: 8, fontWeight: '900' }}>
-                    {p.isMuted ? 'Silenciado' : 'Mic On'}
-                  </Text>
-                </TouchableOpacity>
-
-                {/* Bottom Label Bar */}
-                <View style={styles.participantLabelBar}>
-                  {p.avatarUrl ? <Image source={{ uri: p.avatarUrl }} style={styles.miniAvatar} /> : null}
-                  <Text style={styles.participantName} numberOfLines={1}>{p.name}</Text>
-                  {p.isMuted ? <MicOff size={10} color="#FF007F" /> : <Mic size={10} color="#00E5FF" />}
-                </View>
               </View>
             </LinearGradient>
           </TouchableOpacity>
@@ -136,7 +122,7 @@ const styles = StyleSheet.create({
   gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     width: '100%',
   },
   gradientBorder: {

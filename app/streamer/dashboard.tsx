@@ -9,15 +9,28 @@ export default function StreamerDashboardScreen() {
   const router = useRouter();
   const theme = useTheme();
 
-  // Simulated Daily Task States
-  const [streamHours, setStreamHours] = useState(3); // 3 out of 3
-  const [clovers, setClovers] = useState(5); // 5 out of 5
-  const [kGifts, setKGifts] = useState(10); // 10k out of 10k target
+  const [streamHours, setStreamHours] = useState(3);
+  const [clovers, setClovers] = useState(5);
+  const [kGifts, setKGifts] = useState(10);
   const [hasClaimed, setHasClaimed] = useState(false);
+  const [isAgencyLinked, setIsAgencyLinked] = useState(true);
+  const [agencyName, setAgencyName] = useState('Agencia Oficial Aura 🌴');
 
   const isAllTasksCompleted = streamHours >= 3 && clovers >= 5 && kGifts >= 10;
 
+  const handleRequestAgency = () => {
+    Alert.alert(
+      'Solicitud de Agencia 🏢',
+      'Tu solicitud ha sido notificada a las Agencias Oficiales. Una vez que te acepten, tus metas diarias y ganancias netas del 45% quedarán activadas.',
+      [{ text: 'Entendido' }]
+    );
+  };
+
   const handleClaimReward = () => {
+    if (!isAgencyLinked) {
+      Alert.alert('Enlace Requerido', 'Debes estar vinculada a una Agencia Oficial para desbloquear el reclamo de metas diarias.');
+      return;
+    }
     if (!isAllTasksCompleted) {
       Alert.alert('Tareas Incompletas', 'Debes completar todas las tareas diarias antes de reclamar el bono.');
       return;
@@ -25,7 +38,7 @@ export default function StreamerDashboardScreen() {
     
     Alert.alert(
       '¡Felicidades Presentadora! 🌟',
-      'Has cumplido todas tus tareas diarias con éxito.\n\nSe han abonado $2.00 USD (Monedas equivalentes) a tu meta de monetización.',
+      'Has cumplido todas tus tareas diarias con éxito.\n\nSe han abonado $2.00 USD a tu billetera convertible.',
       [
         { text: '¡Genial!', onPress: () => setHasClaimed(true) }
       ]
@@ -39,24 +52,46 @@ export default function StreamerDashboardScreen() {
         <TouchableOpacity onPress={() => router.back()} style={{ padding: 8, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 20, marginRight: 16 }}>
           <ArrowLeft size={20} color="#FFF" />
         </TouchableOpacity>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 20 }}>Panel de Presentadora 🌟</Text>
-          <Text style={{ color: '#F472B6', fontWeight: 'bold', fontSize: 10, textTransform: 'uppercase' }}>Monetización Exclusiva</Text>
+          <Text style={{ color: '#F472B6', fontWeight: 'bold', fontSize: 10, textTransform: 'uppercase' }}>
+            {isAgencyLinked ? `Enlazada a: ${agencyName}` : 'Requiere Enlace de Agencia'}
+          </Text>
         </View>
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 24 }}>
-        <View style={{ backgroundColor: 'rgba(236,72,153,0.2)', borderWidth: 1, borderColor: 'rgba(236,72,153,0.5)', padding: 16, borderRadius: 16, marginBottom: 24, flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-          <AlertCircle size={20} color="#FF007F" style={{ marginTop: 4 }} />
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: '#F472B6', fontWeight: 'bold', fontSize: 14, marginBottom: 4 }}>
-              Importante:
+        {!isAgencyLinked ? (
+          <View style={{ backgroundColor: 'rgba(245,158,11,0.15)', borderWidth: 1.5, borderColor: '#F59E0B', padding: 20, borderRadius: 24, marginBottom: 24 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <AlertCircle size={24} color="#F59E0B" />
+              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 16 }}>Enlace a Agencia Obligatorio 🏢</Text>
+            </View>
+            <Text style={{ color: '#D1D5DB', fontSize: 12, lineHeight: 20, marginBottom: 14 }}>
+              Para activar tu Panel de Presentadora y recibir tus metas diarias de monetización ($2/día), es <Text style={{ fontWeight: 'bold', color: '#F59E0B' }}>obligatorio unirte a una Agencia Oficial</Text>.
+              {'\n\n'}
+              <Text style={{ fontWeight: 'bold', color: '#FFF' }}>Reparto de Monetización:</Text>
+              {'\n'}• 50% Dueño de la App
+              {'\n'}• 5% Comisión de Agencia (Descontado del 50%)
+              {'\n'}• 45% Ganancia Neta de Presentadora 💰
             </Text>
-            <Text style={{ color: '#D1D5DB', fontSize: 12, lineHeight: 20 }}>
-              Las tareas diarias deben ser completadas antes de las 23:59 de tu país. Al cumplirlas, recibirás un bono automático equivalente a $2.
-            </Text>
+            <TouchableOpacity onPress={handleRequestAgency} style={{ backgroundColor: '#F59E0B', paddingVertical: 12, borderRadius: 18, alignItems: 'center' }}>
+              <Text style={{ color: '#000', fontWeight: '900', fontSize: 13, textTransform: 'uppercase' }}>Solicitar Unirse a una Agencia 🏢</Text>
+            </TouchableOpacity>
           </View>
-        </View>
+        ) : (
+          <View style={{ backgroundColor: 'rgba(236,72,153,0.15)', borderWidth: 1, borderColor: 'rgba(236,72,153,0.4)', padding: 16, borderRadius: 16, marginBottom: 24, flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+            <AlertCircle size={20} color="#FF007F" style={{ marginTop: 2 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: '#F472B6', fontWeight: 'bold', fontSize: 13, marginBottom: 4 }}>
+                Monetización Activa (Reparto 50% App / 45% Presentadora / 5% Agencia)
+              </Text>
+              <Text style={{ color: '#D1D5DB', fontSize: 12, lineHeight: 18 }}>
+                Completa tus tareas diarias antes de las 23:59 para recibir tu bono automático equivalente a $2.00 USD.
+              </Text>
+            </View>
+          </View>
+        )}
 
         <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 18, marginBottom: 16 }}>Progreso Diario de Tareas</Text>
 

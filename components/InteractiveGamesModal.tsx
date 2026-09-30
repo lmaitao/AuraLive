@@ -29,12 +29,6 @@ const ROULETTE_MULTIPLIERS: Record<string, number> = { Rojo: 2, Negro: 2, Verde:
 // ─── DADOS ────────────────────────────────────────────────────────────────────
 const DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 
-// ─── TRAGAMONEDAS ─────────────────────────────────────────────────────────────
-const SLOT_SYMBOLS = ['🍒', '🍋', '🍊', '🍇', '💎', '7️⃣', '🌟'];
-const SLOT_JACKPOTS: Record<string, number> = {
-  '🍒': 2, '🍋': 3, '🍊': 5, '🍇': 8, '💎': 20, '7️⃣': 50, '🌟': 100
-};
-
 function spinRoulette(): { number: number; color: string } {
   const n = Math.floor(Math.random() * 37);
   let color = 'Verde';
@@ -232,18 +226,40 @@ function DiceGame({
   );
 }
 
-// ─── COMPONENTE TRAGAMONEDAS ──────────────────────────────────────────────────
+// ─── TRAGAMONEDAS CASINO 777 ──────────────────────────────────────────────────
+const SLOT_SYMBOLS = ['7️⃣', '💎', '⭐', '🔔', '🍒', '🍋'];
+const SLOT_JACKPOTS: Record<string, number> = {
+  '7️⃣': 100, // TRIPLE 7 JACKPOT x100
+  '💎': 50,  // DIAMOND ROYALE x50
+  '⭐': 25,  // SUPER STAR x25
+  '🔔': 10,  // GOLDEN BELL x10
+  '🍒': 5,   // FRUIT PAIR x5
+  '🍋': 3,   // LEMON DROP x3
+};
+
 function SlotsGame({
   onResult, bet, userCoins
 }: { onResult: (r: GameResult) => void; bet: number; userCoins: number }) {
   const [spinning, setSpinning] = useState(false);
-  const [reels, setReels] = useState(['🍒', '🍒', '🍒']);
-  const [intervalId, setIntervalId] = useState<ReturnType<typeof setInterval> | null>(null);
+  const [reels, setReels] = useState(['7️⃣', '7️⃣', '7️⃣']);
+  const [winMessage, setWinMessage] = useState<string | null>(null);
 
   const spin = async () => {
     if (spinning || bet > userCoins) return;
     setSpinning(true);
+    setWinMessage(null);
     let ticks = 0;
+    
+    // Descuenta la apuesta inicial en la BD
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('wallets').update({
+          coin_balance: Math.max(0, userCoins - bet)
+        }).eq('user_id', user.id);
+      }
+    } catch (_) {}
+
     const id = setInterval(() => {
       setReels([
         SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
@@ -251,52 +267,94 @@ function SlotsGame({
         SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
       ]);
       ticks++;
-      if (ticks >= 20) {
+      if (ticks >= 24) {
         clearInterval(id);
         const final = spinSlots();
         setReels(final);
         setSpinning(false);
-        const isJackpot = final[0] === final[1] && final[1] === final[2];
-        const isTwoPair = final[0] === final[1] || final[1] === final[2] || final[0] === final[2];
-        let prize = 0;
-        if (isJackpot) prize = bet * SLOT_JACKPOTS[final[0]];
-        else if (isTwoPair) prize = bet * 2;
+        
+        const isTripleJackpot = final[0] === final[1] && final[1] === final[2];
+        const isPair = final[0] === final[1] || final[1] === final[2] || final[0] === final[2];
+        
+        let multiplier = 0;
+        let msg = '';
+        
+        if (isTripleJackpot) {
+          multiplier = SLOT_JACKPOTS[final[0]] || 25;
+          msg = `🔥 ¡MEGA JACKPOT TRIPLE ${final[0]}! Ganaste x${multiplier} (${bet * multiplier} 🪙) 🔥`;
+        } else if (isPair) {
+          multiplier = 3;
+          msg = `🎉 ¡PAR GANADOR! Ganaste x${multiplier} (${bet * multiplier} 🪙)`;
+        } else {
+          msg = `💀 Sigue intentando`;
+        }
+
+        const prize = bet * multiplier;
+        setWinMessage(msg);
+
         const gr: GameResult = {
           playerName: 'Tú',
-          game: 'Tragamonedas 🎰',
-          result: `${final.join(' ')}`,
-          prize, emoji: prize > 0 ? '🎉' : '💀',
+          game: 'Tragaperras 777 🎰',
+          result: `${final.join(' | ')}`,
+          prize,
+          emoji: prize > 0 ? '🎰' : '💀',
           timestamp: Date.now()
         };
         onResult(gr);
+
+        // Acredita el premio ganado en Supabase
+        if (prize > 0) {
+          supabase.auth.getUser().then(({ data: { user } }) => {
+            if (user) {
+              supabase.from('wallets').update({
+                coin_balance: userCoins - bet + prize
+              }).eq('user_id', user.id).then(() => {});
+            }
+          });
+        }
+
         try {
           zegoService.engine?.sendBroadcastMessage('game-room',
             JSON.stringify({ type: 'GAME_RESULT', data: gr }));
         } catch (_) {}
       }
-    }, 80);
-    setIntervalId(id);
+    }, 70);
   };
 
   return (
-    <View style={{ alignItems: 'center' }}>
-      <Text style={gs.subtitle}>¡Haz girar los rodillos y gana!</Text>
-      <View style={gs.slotMachine}>
-        {reels.map((s, i) => (
-          <View key={i} style={gs.reel}>
-            <Text style={{ fontSize: 42 }}>{s}</Text>
-          </View>
-        ))}
+    <View style={{ alignItems: 'center', width: '100%' }}>
+      <Text style={gs.subtitle}>🎰 Máquina Tragaperras Casino 777 🎰</Text>
+      
+      {/* Marco de Máquina de Casino Neón Dorado */}
+      <LinearGradient colors={['#F59E0B', '#B45309', '#78350F']} style={gs.slotMachineContainer}>
+        <View style={gs.slotMachineInner}>
+          {reels.map((s, i) => (
+            <View key={i} style={gs.slotReelBox}>
+              <Text style={{ fontSize: 44 }}>{s}</Text>
+            </View>
+          ))}
+        </View>
+      </LinearGradient>
+
+      {winMessage && (
+        <View style={gs.winBanner}>
+          <Text style={gs.winBannerText}>{winMessage}</Text>
+        </View>
+      )}
+
+      {/* Tabla de Premios Multiplicadores */}
+      <View style={gs.payoutTable}>
+        <Text style={{ color: '#FFD700', fontSize: 10, fontWeight: '900', textAlign: 'center' }}>
+          7️⃣ 7️⃣ 7️⃣ (x100)  |  💎 💎 💎 (x50)  |  ⭐ ⭐ ⭐ (x25)  |  Par (x3)
+        </Text>
       </View>
-      <Text style={{ color: '#9CA3AF', fontSize: 11, marginTop: 8, textAlign: 'center' }}>
-        3 iguales = JACKPOT 🌟 | 2 iguales = x2
-      </Text>
-      <TouchableOpacity onPress={spin} disabled={spinning} activeOpacity={0.85}
-        style={{ width: '100%', borderRadius: 18, overflow: 'hidden', marginTop: 14 }}>
-        <LinearGradient colors={spinning ? ['#374151', '#1F2937'] : ['#EC4899', '#9333EA']}
+
+      <TouchableOpacity onPress={spin} disabled={spinning || bet > userCoins} activeOpacity={0.85}
+        style={{ width: '100%', borderRadius: 20, overflow: 'hidden', marginTop: 14 }}>
+        <LinearGradient colors={spinning ? ['#374151', '#1F2937'] : ['#EC4899', '#7C3AED']}
           style={{ paddingVertical: 14, alignItems: 'center' }}>
-          <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 14 }}>
-            {spinning ? '🎰 Girando...' : `🎰 ¡Jugar! (${bet} 🪙)`}
+          <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 14, textTransform: 'uppercase' }}>
+            {spinning ? '🎰 Girando Rodillos 777...' : `🎰 ¡GIRAR CASSINO 777! (${bet} 🪙)`}
           </Text>
         </LinearGradient>
       </TouchableOpacity>
@@ -443,7 +501,7 @@ export function InteractiveGamesModal({
               <>
                 <Text style={[gs.sectionLabel, { marginTop: 16 }]}>🏆 Últimos Resultados:</Text>
                 {results.map((r, i) => (
-                  <View key={i} style={[gs.resultRow, { borderLeftColor: r.prize > 0 ? '#10B981' : '#EF4444' } as any]}>
+                  <View key={i} style={[gs.resultRow, { borderLeftColor: r.prize > 0 ? '#10B981' : '#EF4444' }]}>
                     <Text style={{ fontSize: 20 }}>{r.emoji}</Text>
                     <View style={{ flex: 1, marginLeft: 10 }}>
                       <Text style={gs.resultGame}>{r.game}</Text>
@@ -625,26 +683,69 @@ const gs = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  // Tragamonedas
-  slotMachine: {
+  // Tragamonedas Casino 777
+  slotMachineContainer: {
+    padding: 6,
+    borderRadius: 22,
+    marginBottom: 10,
+    width: '100%',
+    maxWidth: 320,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  slotMachineInner: {
     flexDirection: 'row',
-    gap: 4,
+    justifyContent: 'space-between',
     backgroundColor: '#0F172A',
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 12,
     borderWidth: 2,
-    borderColor: '#EC4899',
-    marginBottom: 8,
+    borderColor: 'rgba(245,158,11,0.5)',
+    gap: 8,
   },
-  reel: {
-    width: 72,
-    height: 80,
-    borderRadius: 12,
-    backgroundColor: '#1E293B',
-    borderWidth: 1,
-    borderColor: 'rgba(236,72,153,0.4)',
+  slotReelBox: {
+    flex: 1,
+    height: 84,
+    borderRadius: 14,
+    backgroundColor: '#1E1B4B',
+    borderWidth: 1.5,
+    borderColor: '#F59E0B',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+  },
+  winBanner: {
+    backgroundColor: 'rgba(52,211,153,0.15)',
+    borderWidth: 1,
+    borderColor: '#34D399',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 8,
+    width: '100%',
+    alignItems: 'center',
+  },
+  winBannerText: {
+    color: '#34D399',
+    fontWeight: '900',
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  payoutTable: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.3)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 4,
+    width: '100%',
   },
   // Resultados
   resultRow: {

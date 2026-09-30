@@ -156,6 +156,18 @@ export default function LiveRoomScreen() {
   const [filtersModalVisible, setFiltersModalVisible] = useState(false);
   const [gamesModalVisible, setGamesModalVisible] = useState(false);
   const [eventsModalVisible, setEventsModalVisible] = useState(false);
+  const [exitStreamModalVisible, setExitStreamModalVisible] = useState(false);
+  const [messagesModalVisible, setMessagesModalVisible] = useState(false);
+
+  // Mensajería en Vivo dentro de la Sala (Sin salir del Stream)
+  const [inRoomChats, setInRoomChats] = useState<any[]>([]);
+  const [activeMessageChat, setActiveMessageChat] = useState<any | null>(null);
+  const [directMsgText, setDirectMsgText] = useState('');
+
+  // Métricas reales en tiempo real de la transmisión
+  const [realStreamSeconds, setRealStreamSeconds] = useState(0);
+  const [receivedCloversCount, setReceivedCloversCount] = useState(0);
+  const [realViewerCount, setRealViewerCount] = useState(1);
 
   const [faceDetected, setFaceDetected] = useState(true);
   const [faceLostSeconds, setFaceLostSeconds] = useState(0);
@@ -178,12 +190,16 @@ export default function LiveRoomScreen() {
               gender: data.gender,
               is_agency: data.is_agency,
             });
-            setCurrentEntrance({
-              username: data.full_name || 'Usuario Aura',
-              isVip: (data.svip_level || 0) > 0 || (data.wealth_level || 0) > 0,
-              svipLevel: data.svip_level || 0,
-              wealthLevel: data.wealth_level || 0,
-            });
+
+            // Si es espectador (no el presentador de su propia sala), mostrar banner de entrada
+            if (!isHost) {
+              setCurrentEntrance({
+                username: data.full_name || 'Usuario Aura',
+                isVip: (data.svip_level || 0) > 0 || (data.wealth_level || 0) > 0,
+                svipLevel: data.svip_level || 0,
+                wealthLevel: data.wealth_level || 0,
+              });
+            }
           }
         });
         supabase.from('wallets').select('coin_balance').eq('user_id', user.id).single().then(({ data }) => {
@@ -192,6 +208,66 @@ export default function LiveRoomScreen() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    let streamTimer: NodeJS.Timeout;
+    if (isHost) {
+      streamTimer = setInterval(() => {
+        setRealStreamSeconds((prev) => prev + 1);
+      }, 1000);
+    }
+    return () => clearInterval(streamTimer);
+  }, [isHost]);
+
+  useEffect(() => {
+    if (messagesModalVisible) {
+      fetchInRoomChats();
+    }
+  }, [messagesModalVisible]);
+
+  const fetchInRoomChats = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: msgs } = await supabase
+        .from('direct_messages')
+        .select('id, content, created_at, is_read, sender_id, receiver_id, profiles!direct_messages_sender_id_fkey(full_name, avatar_url), receiver:profiles!direct_messages_receiver_id_fkey(full_name, avatar_url)')
+        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (msgs) {
+        const convoMap: Record<string, any> = {};
+        msgs.forEach(m => {
+          const otherId = m.sender_id === user.id ? m.receiver_id : m.sender_id;
+          const otherProfile = m.sender_id === user.id ? m.receiver : m.profiles;
+          if (!convoMap[otherId]) {
+            convoMap[otherId] = {
+              id: otherId,
+              userId: otherId,
+              username: otherProfile?.full_name || 'Usuario Aura',
+              avatar: otherProfile?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+              lastMessage: m.content || '📎 Mensaje',
+              timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            };
+          }
+        });
+        setInRoomChats(Object.values(convoMap));
+      }
+    } catch (e) {}
+  };
+
+  const formatStreamDuration = (totalSecs: number) => {
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    if (mins >= 60) {
+      const hrs = Math.floor(mins / 60);
+      const remMins = mins % 60;
+      return `${hrs}h ${remMins}m`;
+    }
+    return `${mins}m ${secs}s`;
+  };
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -230,7 +306,7 @@ export default function LiveRoomScreen() {
   ) => {
     const newMsg: ChatItem = {
       id: Date.now().toString() + Math.random().toString(),
-      senderName: customSenderName || "Tú",
+      senderName: customSenderName || hostProfile?.full_name || "Usuario Aura",
       senderAvatar:
         avatarUrl ||
         "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400",
@@ -242,10 +318,72 @@ export default function LiveRoomScreen() {
     setMessages((prev) => [...prev, newMsg]);
   };
 
+  const handleQuickCloverSend = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase.from('profiles').select('created_at, clover_gift_sent').eq('id', user.id).single();
+
+      if (profile) {
+        const createdDate = new Date(profile.created_at || Date.now());
+        const hoursPassed = (Date.now() - createdDate.getTime()) / (1000 * 60 * 60);
+
+        // Opción A: Tiene el Trébol Dorado Gratuito de Bienvenida (Cumplidas 24h y no ocupado)
+        if (!profile.clover_gift_sent && hoursPassed >= 24) {
+          await supabase.from('profiles').update({ clover_gift_sent: true }).eq('id', user.id);
+          handleGiftSuccess(senderCoins, { name: 'Trébol Dorado 🍀', coinPrice: 300, iconUrl: 'https://cdn-icons-png.flaticon.com/512/346/346195.png' });
+          setAlertConfig({
+            visible: true,
+            title: '¡Trébol Dorado Gratuito Enviado! 🍀',
+            message: 'Has enviado tu Trébol Dorado Gratuito de Bienvenida (+300 Auras para la sala).',
+            type: 'success',
+            confirmText: 'Genial',
+            onConfirm: () => setAlertConfig(null),
+          });
+          return;
+        }
+
+        // Opción B: Enviar usando Monedas (300 monedas)
+        const cloverCost = 300;
+        if (senderCoins >= cloverCost) {
+          handleGiftSuccess(senderCoins - cloverCost, { name: 'Trébol Dorado 🍀', coinPrice: 300, iconUrl: 'https://cdn-icons-png.flaticon.com/512/346/346195.png' });
+          setAlertConfig({
+            visible: true,
+            title: '¡Trébol Dorado Enviado! 🍀',
+            message: `Has enviado 1 Trébol Dorado (-${cloverCost} Monedas, +300 Auras).`,
+            type: 'success',
+            confirmText: 'Aceptar',
+            onConfirm: () => setAlertConfig(null),
+          });
+        } else {
+          setAlertConfig({
+            visible: true,
+            title: 'Saldo Insuficiente 🪙',
+            message: !profile.clover_gift_sent && hoursPassed < 24
+              ? `Tu Trébol Dorado Gratuito 🍀 se activará al cumplir 24h de registro (Faltan ~${Math.ceil(24 - hoursPassed)}h). Recarga 300 monedas para enviar un Trébol Dorado.`
+              : 'Un Trébol Dorado cuesta 300 Monedas. Recarga en la tienda.',
+            type: 'warning',
+            confirmText: 'Entendido',
+            onConfirm: () => setAlertConfig(null),
+          });
+        }
+      }
+    } catch (e) {
+      console.log('Error in quick clover send:', e);
+    }
+  };
+
   const handleGiftSuccess = (newBal: number, giftData?: { name?: string; iconUrl?: string; lottieUrl?: string; coinPrice?: number }) => {
     setSenderCoins(newBal);
+    const isClover = giftData?.name?.toLowerCase().includes('trébol') || giftData?.name?.toLowerCase().includes('clover');
+    if (isClover) {
+      setReceivedCloversCount((prev) => prev + 1);
+    }
+
     setAccumulatedCoins((prev) => {
-      const aurasEarned = (giftData?.coinPrice || 10) * 0.4;
+      // 1000 Monedas enviadas = 1000 Auras (1K) = $1.00 USD
+      const aurasEarned = isClover ? 300 : (giftData?.coinPrice || 100);
       const next = prev + aurasEarned;
       setUnlockedLeaves(Math.min(5, Math.floor(next / 5000)));
       return next;
@@ -267,16 +405,7 @@ export default function LiveRoomScreen() {
 
   const handleExitRoom = () => {
     if (isHost) {
-      setAlertConfig({
-        visible: true,
-        title: "Finalizar Transmisión",
-        message: "¿Estás segura de que deseas finalizar tu transmisión en vivo? La sala se cerrará para todos los espectadores.",
-        type: "warning",
-        confirmText: "Finalizar y Salir",
-        cancelText: "Continuar",
-        onConfirm: () => router.replace("/(tabs)/feed" as any),
-        onCancel: () => setAlertConfig(null)
-      });
+      setExitStreamModalVisible(true);
     } else {
       router.back();
     }
@@ -336,17 +465,31 @@ export default function LiveRoomScreen() {
           </View>
         </View>
 
-        {/* Right side stats: Auras Recibidas (Solo Presentadoras Mujeres o Agencias Certificadas) */}
-        {(hostProfile?.gender === 'female' || hostProfile?.is_agency) && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        {/* Right side stats: Auras Recibidas & Botón de Salida/Cierre */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {(hostProfile?.gender === 'female' || hostProfile?.is_agency) && (
             <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(168,85,247,0.2)', borderWidth: 1.5, borderColor: '#A855F7', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16, gap: 4 }}>
               <Text style={{ fontSize: 13 }}>🔮</Text>
               <Text style={{ color: '#C084FC', fontWeight: '900', fontSize: 11 }}>
                 {(accumulatedCoins >= 1000 ? (accumulatedCoins / 1000).toFixed(1) + 'K' : accumulatedCoins)} Auras
               </Text>
             </View>
-          </View>
-        )}
+          )}
+
+          <TouchableOpacity
+            onPress={handleExitRoom}
+            activeOpacity={0.8}
+            style={{
+              padding: 8,
+              backgroundColor: 'rgba(239, 68, 68, 0.25)',
+              borderRadius: 20,
+              borderWidth: 1.5,
+              borderColor: '#EF4444',
+            }}
+          >
+            <X size={18} color="#FFF" />
+          </TouchableOpacity>
+        </View>
       </LinearGradient>
 
       <ScrollView
@@ -391,23 +534,22 @@ export default function LiveRoomScreen() {
         {/* Bottom Organized 3D Cyberpunk Action Bar */}
         <LinearGradient
           colors={['#1F2937', '#0F0F1A']}
-          style={{ padding: 10, borderRadius: 24, borderWidth: 1.5, borderColor: 'rgba(0, 229, 255, 0.4)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}
+          style={{ paddingHorizontal: 8, paddingVertical: 8, borderRadius: 22, borderWidth: 1.5, borderColor: 'rgba(0, 229, 255, 0.4)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6, width: '100%' }}
         >
 
-
-          {/* 2. Direct DM Privado Button */}
+          {/* 2. Mensajería Directa Button */}
           <TouchableOpacity
-            onPress={() => router.push('/chat/u1' as any)}
+            onPress={() => setMessagesModalVisible(true)}
             activeOpacity={0.8}
-            style={{ flex: 1, borderRadius: 16, overflow: 'hidden' }}
+            style={{ flex: 1.1, borderRadius: 14, overflow: 'hidden' }}
           >
             <LinearGradient
               colors={['#EC4899', '#8B5CF6']}
-              style={{ paddingVertical: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 16, gap: 1 }}
+              style={{ paddingVertical: 7, paddingHorizontal: 2, alignItems: 'center', justifyContent: 'center', borderRadius: 14, gap: 1 }}
             >
-              <MessageSquare size={15} color="#FFF" />
-              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 9, textTransform: 'uppercase' }}>
-                DM 📩
+              <MessageSquare size={14} color="#FFF" />
+              <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontWeight: '900', fontSize: 8.5, textTransform: 'uppercase', textAlign: 'center' }}>
+                Mensajería 📩
               </Text>
             </LinearGradient>
           </TouchableOpacity>
@@ -416,14 +558,14 @@ export default function LiveRoomScreen() {
           <TouchableOpacity
             onPress={() => setGiftModalVisible(true)}
             activeOpacity={0.8}
-            style={{ flex: 1.1, borderRadius: 16, overflow: 'hidden' }}
+            style={{ flex: 1, borderRadius: 14, overflow: 'hidden' }}
           >
             <LinearGradient
               colors={['#FF007F', '#8B5CF6']}
-              style={{ paddingVertical: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 16, gap: 1 }}
+              style={{ paddingVertical: 7, paddingHorizontal: 2, alignItems: 'center', justifyContent: 'center', borderRadius: 14, gap: 1 }}
             >
-              <Gift size={15} color="#FFF" />
-              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 9, textTransform: 'uppercase' }}>
+              <Gift size={14} color="#FFF" />
+              <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontWeight: '900', fontSize: 8.5, textTransform: 'uppercase', textAlign: 'center' }}>
                 Regalos 🎁
               </Text>
             </LinearGradient>
@@ -433,33 +575,31 @@ export default function LiveRoomScreen() {
           <TouchableOpacity
             onPress={() => setGamesModalVisible(true)}
             activeOpacity={0.8}
-            style={{ flex: 1, borderRadius: 16, overflow: 'hidden' }}
+            style={{ flex: 1, borderRadius: 14, overflow: 'hidden' }}
           >
             <LinearGradient
               colors={['#F59E0B', '#B45309']}
-              style={{ paddingVertical: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 16, gap: 1 }}
+              style={{ paddingVertical: 7, paddingHorizontal: 2, alignItems: 'center', justifyContent: 'center', borderRadius: 14, gap: 1 }}
             >
-              <Gamepad2 size={15} color="#FFF" />
-              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 9, textTransform: 'uppercase' }}>
-                Juegos
+              <Gamepad2 size={14} color="#FFF" />
+              <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontWeight: '900', fontSize: 8.5, textTransform: 'uppercase', textAlign: 'center' }}>
+                Juegos 🎰
               </Text>
             </LinearGradient>
           </TouchableOpacity>
 
           {/* 5. Trébol Meta Button */}
           <TouchableOpacity
-            onPress={() => {
-              handleGiftSuccess(senderCoins - 500, { name: 'Trébol Dorado 🍀', iconUrl: 'https://images.unsplash.com/photo-1518133910546-b6c2fb7d79e3?w=300' });
-            }}
+            onPress={handleQuickCloverSend}
             activeOpacity={0.8}
-            style={{ flex: 1, borderRadius: 16, overflow: 'hidden' }}
+            style={{ flex: 1, borderRadius: 14, overflow: 'hidden' }}
           >
             <LinearGradient
               colors={['#10B981', '#047857']}
-              style={{ paddingVertical: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 16, gap: 1 }}
+              style={{ paddingVertical: 7, paddingHorizontal: 2, alignItems: 'center', justifyContent: 'center', borderRadius: 14, gap: 1 }}
             >
-              <Text style={{ fontSize: 13 }}>🍀</Text>
-              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 9, textTransform: 'uppercase' }}>
+              <Text style={{ fontSize: 12 }}>🍀</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: '#FFF', fontWeight: '900', fontSize: 8.5, textTransform: 'uppercase', textAlign: 'center' }}>
                 Trébol
               </Text>
             </LinearGradient>
@@ -627,6 +767,122 @@ export default function LiveRoomScreen() {
         </View>
       </Modal>
 
+      {/* 🚪 MODAL DE CONFIRMACIÓN Y RESUMEN PARA FINALIZAR TRANSMISIÓN (PRESENTADORA / HOST) 🚪 */}
+      <Modal visible={exitStreamModalVisible} transparent animationType="fade">
+        <View style={styles.exitModalOverlay}>
+          <LinearGradient colors={['#1E1B4B', '#090D16']} style={styles.exitModalContainer}>
+            <View style={styles.exitModalBadgeIcon}>
+              <Text style={{ fontSize: 32 }}>📡</Text>
+            </View>
+
+            <Text style={styles.exitModalTitle}>¿Finalizar Transmisión en Vivo? 🎥</Text>
+            <Text style={styles.exitModalSubtitle}>
+              La sala se cerrará para todos los espectadores. Este es el resumen de tu transmisión:
+            </Text>
+
+            {/* Resumen de Métricas Reales de la Transmisión */}
+            <View style={styles.exitStatsGrid}>
+              <View style={styles.exitStatCard}>
+                <Text style={styles.exitStatValue}>{formatStreamDuration(realStreamSeconds)} ⏱️</Text>
+                <Text style={styles.exitStatLabel}>Tiempo Transmitido</Text>
+              </View>
+
+              <View style={styles.exitStatCard}>
+                <Text style={styles.exitStatValue}>{realViewerCount} 👥</Text>
+                <Text style={styles.exitStatLabel}>Espectadores</Text>
+              </View>
+
+              <View style={styles.exitStatCard}>
+                <Text style={[styles.exitStatValue, { color: '#C084FC' }]}>
+                  +{(accumulatedCoins >= 1000 ? (accumulatedCoins / 1000).toFixed(1) + 'K' : accumulatedCoins)} 🔮
+                </Text>
+                <Text style={styles.exitStatLabel}>Auras (~${(accumulatedCoins / 1000).toFixed(2)} USD)</Text>
+              </View>
+
+              <View style={styles.exitStatCard}>
+                <Text style={[styles.exitStatValue, { color: '#22C55E' }]}>{receivedCloversCount} 🍀</Text>
+                <Text style={styles.exitStatLabel}>Tréboles Recibidos</Text>
+              </View>
+            </View>
+
+            {/* Botones de Acción */}
+            <View style={{ gap: 10, width: '100%', marginTop: 8 }}>
+              <TouchableOpacity
+                onPress={() => setExitStreamModalVisible(false)}
+                activeOpacity={0.85}
+                style={styles.continueStreamBtn}
+              >
+                <Text style={styles.continueStreamBtnText}>🔴 CONTINUAR TRANSMITIENDO</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setExitStreamModalVisible(false);
+                  router.replace("/(tabs)/feed" as any);
+                }}
+                activeOpacity={0.85}
+                style={styles.finishExitBtn}
+              >
+                <LinearGradient colors={['#EF4444', '#991B1B']} style={styles.finishExitGradient}>
+                  <Text style={styles.finishExitBtnText}>🚪 FINALIZAR Y SALIR</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
+        </View>
+      </Modal>
+
+      {/* 📩 MODAL / DRAWER DE MENSAJERÍA DIRECTA EN VIVO (SIN SALIR DE LA TRANSMISIÓN) 📩 */}
+      <Modal visible={messagesModalVisible} transparent animationType="slide" onRequestClose={() => setMessagesModalVisible(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(2, 6, 23, 0.88)', justifyContent: 'flex-end' }}>
+          <LinearGradient colors={['#0F172A', '#020617']} style={{ height: '75%', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, borderWidth: 1.5, borderColor: '#EC4899' }}>
+            {/* Header Modal Mensajería */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <MessageSquare size={20} color="#EC4899" />
+                <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 16 }}>Mensajería Directa 📩</Text>
+              </View>
+              <TouchableOpacity onPress={() => setMessagesModalVisible(false)} style={{ padding: 4 }}>
+                <X size={20} color="#9CA3AF" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Lista de Conversaciones Recientes */}
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+              {inRoomChats.map((c) => (
+                <TouchableOpacity
+                  key={c.id}
+                  onPress={() => {
+                    setMessagesModalVisible(false);
+                    router.push({ pathname: '/chat/[id]', params: { id: c.userId } } as any);
+                  }}
+                  activeOpacity={0.8}
+                  style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.04)', padding: 12, borderRadius: 18, marginBottom: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', gap: 12 }}
+                >
+                  <Image source={{ uri: c.avatar }} style={{ width: 48, height: 48, borderRadius: 24, borderWidth: 1.5, borderColor: '#EC4899' }} />
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 13 }}>{c.username}</Text>
+                      <Text style={{ color: '#6B7280', fontSize: 10 }}>{c.timestamp}</Text>
+                    </View>
+                    <Text numberOfLines={1} style={{ color: '#9CA3AF', fontSize: 11, marginTop: 2 }}>{c.lastMessage}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+
+              {inRoomChats.length === 0 && (
+                <View style={{ padding: 32, alignItems: 'center' }}>
+                  <MessageSquare size={36} color="#4B5563" />
+                  <Text style={{ color: '#9CA3AF', fontSize: 12, marginTop: 8, textAlign: 'center' }}>
+                    No tienes mensajes directos previos. ¡Inicia una conversación tocando un usuario en la sala!
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          </LinearGradient>
+        </View>
+      </Modal>
+
       <AuraAlert
         visible={!!alertConfig}
         title={alertConfig?.title || ''}
@@ -646,3 +902,110 @@ export default function LiveRoomScreen() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  exitModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  exitModalContainer: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 28,
+    borderWidth: 1.5,
+    borderColor: 'rgba(239, 68, 68, 0.5)',
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  exitModalBadgeIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 2,
+    borderColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  exitModalTitle: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 18,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  exitModalSubtitle: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  exitStatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 16,
+    gap: 8,
+  },
+  exitStatCard: {
+    width: '48%',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 16,
+    padding: 12,
+    alignItems: 'center',
+  },
+  exitStatValue: {
+    color: '#00E5FF',
+    fontWeight: '900',
+    fontSize: 16,
+    marginBottom: 2,
+  },
+  exitStatLabel: {
+    color: '#9CA3AF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  continueStreamBtn: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+  },
+  continueStreamBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+  finishExitBtn: {
+    width: '100%',
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  finishExitGradient: {
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  finishExitBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+});

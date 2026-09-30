@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Image, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { sanitizeMessage } from '../utils/antiLeakFilter';
 import { useTheme } from '../hooks/useTheme';
@@ -26,37 +26,44 @@ interface LiveChatProps {
 export const LiveChat: React.FC<LiveChatProps> = ({ roomId, messages, onSendMessage }) => {
   const theme = useTheme();
   const [inputText, setInputText] = useState('');
+  const [myUserName, setMyUserName] = useState('Usuario Aura');
   const [myAvatarUrl, setMyAvatarUrl] = useState('https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400');
+  const avatarRef = React.useRef(myAvatarUrl);
+  avatarRef.current = myAvatarUrl;
 
-  // Load user profile avatar
+  // Load user profile name & avatar
   useEffect(() => {
-    async function loadAvatar() {
+    async function loadProfile() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          const { data: profile } = await supabase.from('profiles').select('avatar_url').eq('id', user.id).single();
-          if (profile && profile.avatar_url) {
-            setMyAvatarUrl(profile.avatar_url);
+          const { data: profile } = await supabase.from('profiles').select('full_name, username, avatar_url').eq('id', user.id).single();
+          if (profile) {
+            if (profile.avatar_url) setMyAvatarUrl(profile.avatar_url);
+            const realName = profile.full_name || profile.username || (user.email ? user.email.split('@')[0] : 'Usuario Aura');
+            setMyUserName(realName);
           }
         }
       } catch (e) {}
     }
-    loadAvatar();
+    loadProfile();
   }, []);
 
   // Realtime Supabase Channel Subscription for Live Room Chat
   useEffect(() => {
     if (!roomId) return;
 
-    const channel = supabase
-      .channel(`room-chat-${roomId}`)
+    const channelTopic = `room-chat-${roomId}-${Math.random().toString(36).substring(2, 7)}`;
+    const channel = supabase.channel(channelTopic);
+
+    channel
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'chat_messages' },
+        { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${roomId}` },
         (payload) => {
           const newMsg = payload.new;
           if (newMsg && newMsg.message) {
-            onSendMessage(newMsg.message, newMsg.is_censored || false, myAvatarUrl);
+            onSendMessage(newMsg.message, newMsg.is_censored || false, newMsg.sender_avatar || avatarRef.current, newMsg.sender_name);
           }
         }
       )
@@ -65,21 +72,23 @@ export const LiveChat: React.FC<LiveChatProps> = ({ roomId, messages, onSendMess
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [roomId, myAvatarUrl]);
+  }, [roomId]);
 
   const handleSend = async () => {
     if (!inputText.trim()) return;
     const { sanitizedText, isCensored } = sanitizeMessage(inputText);
 
-    onSendMessage(sanitizedText, isCensored, myAvatarUrl);
+    onSendMessage(sanitizedText, isCensored, myAvatarUrl, myUserName);
     setInputText('');
 
     try {
       const user = (await supabase.auth.getUser()).data.user;
       if (user) {
         await supabase.from('chat_messages').insert({
-          room_id: roomId && roomId.includes('-') ? roomId : null,
-          sender_id: user.id,
+          room_id: roomId,
+          user_id: user.id,
+          sender_name: myUserName,
+          sender_avatar: myAvatarUrl,
           message: sanitizedText,
           is_censored: isCensored,
         });
@@ -110,40 +119,47 @@ export const LiveChat: React.FC<LiveChatProps> = ({ roomId, messages, onSendMess
   );
 
   return (
-    <View style={styles.chatContainer}>
-      {/* High-Performance 60 FPS FlashList Chat Engine */}
-      <View style={styles.listContainer}>
-        <FlashList
-          data={messages}
-          renderItem={renderItem}
-          estimatedItemSize={38}
-          keyExtractor={(item) => item.id}
-          inverted={false}
-          showsVerticalScrollIndicator={false}
-        />
-      </View>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 20}
+      style={{ flex: 1 }}
+    >
+      <View style={styles.chatContainer}>
+        {/* High-Performance 60 FPS FlashList Chat Engine */}
+        <View style={styles.listContainer}>
+          <FlashList
+            data={messages}
+            renderItem={renderItem}
+            estimatedItemSize={38}
+            keyExtractor={(item) => item.id}
+            inverted={false}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          />
+        </View>
 
-      {/* Futuristic Cyberpunk Chat Input Bar */}
-      <View style={styles.inputBarContainer}>
-        <TextInput
-          value={inputText}
-          onChangeText={setInputText}
-          placeholder="Escribe un mensaje en vivo..."
-          placeholderTextColor="#9CA3AF"
-          style={styles.textInput}
-          onSubmitEditing={handleSend}
-        />
-        <TouchableOpacity
-          onPress={handleSend}
-          activeOpacity={0.8}
-          style={{ borderRadius: 18, overflow: 'hidden' }}
-        >
-          <LinearGradient colors={['#00E5FF', '#0284C7']} style={styles.sendBtnGradient}>
-            <Send size={16} color="#000000" />
-          </LinearGradient>
-        </TouchableOpacity>
+        {/* Futuristic Cyberpunk Chat Input Bar */}
+        <View style={styles.inputBarContainer}>
+          <TextInput
+            value={inputText}
+            onChangeText={setInputText}
+            placeholder="Escribe un mensaje en vivo..."
+            placeholderTextColor="#9CA3AF"
+            style={styles.textInput}
+            onSubmitEditing={handleSend}
+          />
+          <TouchableOpacity
+            onPress={handleSend}
+            activeOpacity={0.8}
+            style={{ borderRadius: 18, overflow: 'hidden' }}
+          >
+            <LinearGradient colors={['#00E5FF', '#0284C7']} style={styles.sendBtnGradient}>
+              <Send size={16} color="#000000" />
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 

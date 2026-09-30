@@ -112,14 +112,7 @@ export default function SuperAdminDashboardScreen() {
 
       // 3. Load Tickets
       const { data: tData } = await supabase.from('support_tickets').select('id, subject, description, status, profiles(full_name)').eq('status', 'open').order('created_at', { ascending: false }).limit(20);
-      if (tData) setTickets(tData);
-      else {
-        // Mock tickets if table is empty
-        setTickets([
-          { id: '1', subject: 'Problema con Retiro Binance', description: 'Mi pago de ayer no ha llegado a mi wallet TRC20.', status: 'open', profiles: { full_name: 'Streamer VIP' } },
-          { id: '2', subject: 'Usuario abusivo en mi sala', description: 'El usuario xyz está insultando constantemente.', status: 'open', profiles: { full_name: 'Agencia Admin' } }
-        ]);
-      }
+      setTickets(tData || []);
 
       // 4. Load Payments (Withdrawals)
       const { data: wData } = await supabase.from('withdrawal_requests').select('id, applicant_type, coin_amount, usd_equivalent, payment_method, account_details, status, created_at, profiles(full_name, email)').order('created_at', { ascending: false });
