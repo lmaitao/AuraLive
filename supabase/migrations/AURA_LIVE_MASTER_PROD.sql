@@ -9,8 +9,15 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- ============================================================================
 -- 0. LIMPIEZA TOTAL (DROP + CREATE SIN TABLAS DUPLICADAS)
 -- ============================================================================
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-DROP TRIGGER IF EXISTS trg_protect_profile_columns ON public.profiles;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_Namespace n JOIN pg_class c ON c.relnamespace = n.oid WHERE n.nspname = 'auth' AND c.relname = 'users') THEN
+        DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+    END IF;
+    IF to_regclass('public.profiles') IS NOT NULL THEN
+        DROP TRIGGER IF EXISTS trg_protect_profile_columns ON public.profiles;
+    END IF;
+END $$;
 
 DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
 DROP FUNCTION IF EXISTS public.protect_profile_sensitive_columns() CASCADE;
@@ -1850,6 +1857,28 @@ ON CONFLICT (id) DO UPDATE SET
     lottie_animation_url = EXCLUDED.lottie_animation_url,
     is_exclusive = EXCLUDED.is_exclusive,
     sort_order = EXCLUDED.sort_order;
+
+-- 4. Sincronización automática de usuarios ya existentes en auth.users (si los hubiera)
+INSERT INTO public.profiles (id, email, username, full_name, avatar_url, gender, status, is_identity_verified)
+SELECT
+    u.id,
+    COALESCE(u.email, u.raw_user_meta_data->>'email', 'user_' || LEFT(u.id::text, 8) || '@auralive.app'),
+    COALESCE(
+        u.raw_user_meta_data->>'username',
+        split_part(COALESCE(u.email, 'usuario'), '@', 1) || '_' || LEFT(u.id::text, 4)
+    ),
+    COALESCE(u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name', 'Usuario Aura'),
+    COALESCE(u.raw_user_meta_data->>'avatar_url', u.raw_user_meta_data->>'picture', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400'),
+    COALESCE(u.raw_user_meta_data->>'gender', 'female'),
+    'esperando_biometria',
+    FALSE
+FROM auth.users u
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.wallets (user_id, coin_balance, aura_balance, clover_balance)
+SELECT u.id, 1000, 0, 1
+FROM auth.users u
+ON CONFLICT (user_id) DO NOTHING;
 
 -- ============================================================================
 -- FIN DEL SCRIPT AURA LIVE MASTER PRODUCCIÓN v5.0
