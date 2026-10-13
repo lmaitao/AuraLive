@@ -432,7 +432,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.92)',
     alignItems: 'center',
-    justify: 'center',
+    justifyContent: 'center',
   },
   timerBadge: {
     position: 'absolute',

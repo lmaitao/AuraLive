@@ -7,6 +7,7 @@ import { useTheme } from '../../hooks/useTheme';
 import { ArrowLeft, Share2, Users, TrendingUp, Sparkles, QrCode, Copy, Download, Search, Trash2, Calendar, ChevronRight, CheckCircle2 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AuraAlert, AuraAlertProps } from '../../components/AuraAlert';
+import { supabase } from '../../lib/supabase';
 
 export interface RecruitedStreamer {
   id: string;
@@ -58,7 +59,7 @@ export default function AgencyDashboardScreen() {
           .eq('agency_id', agencyData.id);
 
         if (profileList && profileList.length > 0) {
-          const mappedStreamers: RecruitedStreamer[] = profileList.map(p => ({
+          const mappedStreamers: RecruitedStreamer[] = profileList.map((p: any) => ({
             id: p.id,
             name: p.full_name || p.username || 'Presentadora Aura',
             avatarUrl: p.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
@@ -283,7 +284,8 @@ export default function AgencyDashboardScreen() {
                 </Text>
                 {st.status === 'pending' ? (
                   <TouchableOpacity
-                    onPress={() => {
+                    onPress={async () => {
+                      await supabase.from('profiles').update({ agency_request_status: 'linked' }).eq('id', st.id);
                       setStreamers(prev => prev.map(item => item.id === st.id ? { ...item, status: 'active' } : item));
                       setAlertConfig({
                         visible: true,

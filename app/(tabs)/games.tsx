@@ -6,6 +6,7 @@ import { Coins, Flame, Gamepad2, AlertTriangle, ShieldCheck } from 'lucide-react
 import { Cyber3DBackground } from '../../components/Cyber3DBackground';
 import { AuraAlert, AuraAlertProps } from '../../components/AuraAlert';
 import { supabase } from '../../lib/supabase';
+import { api } from '../../lib/api';
 import { useAuth } from '../../hooks/useAuth';
 import { useFocusEffect } from 'expo-router';
 
@@ -24,7 +25,7 @@ export default function GamesScreen() {
   const fetchBalance = async () => {
     if (!session?.user?.id) return;
     try {
-      const { data, error } = await supabase.from('wallets').select('coin_balance').eq('user_id', session.user.id).single();
+      const { data } = await supabase.from('wallets').select('coin_balance').eq('user_id', session.user.id).single();
       if (data) setBalance(data.coin_balance);
     } catch (e) {
       console.error(e);
@@ -54,55 +55,58 @@ export default function GamesScreen() {
     }
 
     setIsSpinning(true);
-    
-    // Descontar apuesta inmediatamente
-    const newBalAfterBet = balance - betAmount;
-    setBalance(newBalAfterBet);
-    await supabase.from('wallets').update({ coin_balance: newBalAfterBet }).eq('user_id', session.user.id);
 
-    // Calcular resultado
-    const randomIndex = Math.floor(Math.random() * MULTIPLIERS.length);
-    const multiplier = MULTIPLIERS[randomIndex];
-    const winAmount = Math.floor(betAmount * multiplier);
-    
-    // Animación visual de ruleta
-    const spins = 5; 
-    const finalAngle = (spins * 360) + (randomIndex * (360 / MULTIPLIERS.length));
-    
-    Animated.timing(spinAnim, {
-      toValue: finalAngle,
-      duration: 3000,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true
-    }).start(async () => {
+    try {
+      const res = await api.games.playGame(session.user.id, 'wheel', betAmount);
+      const segIdx = res.outcome?.segment_index ?? Math.max(0, MULTIPLIERS.indexOf(res.multiplier));
+      const multiplier = res.multiplier;
+      const winAmount = res.prize;
+
+      // Animación visual de ruleta hacia el segmento determinado por el servidor
+      const spins = 5;
+      const finalAngle = (spins * 360) + (segIdx * (360 / MULTIPLIERS.length));
+
+      Animated.timing(spinAnim, {
+        toValue: finalAngle,
+        duration: 3000,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true
+      }).start(() => {
+        setIsSpinning(false);
+        spinAnim.setValue(segIdx * (360 / MULTIPLIERS.length));
+        setBalance(res.new_balance);
+
+        if (winAmount > 0) {
+          setAlertConfig({
+            visible: true,
+            title: "¡Ganaste! 🎉",
+            message: `Multiplicador x${multiplier}. Has ganado ${winAmount} monedas.`,
+            type: "success",
+            confirmText: "Reclamar",
+            onConfirm: () => setAlertConfig(null)
+          });
+        } else {
+          setAlertConfig({
+            visible: true,
+            title: "¡Oh no! 😭",
+            message: "No hubo suerte esta vez. Sigue intentando.",
+            type: "danger",
+            confirmText: "Intentar de nuevo",
+            onConfirm: () => setAlertConfig(null)
+          });
+        }
+      });
+    } catch (e: any) {
       setIsSpinning(false);
-      spinAnim.setValue(randomIndex * (360 / MULTIPLIERS.length)); // reset for next spin
-
-      // Otorgar ganancia
-      if (winAmount > 0) {
-        const finalBal = newBalAfterBet + winAmount;
-        setBalance(finalBal);
-        await supabase.from('wallets').update({ coin_balance: finalBal }).eq('user_id', session.user.id);
-        
-        setAlertConfig({
-          visible: true,
-          title: "¡Ganaste! 🎉",
-          message: `Multiplicador x${multiplier}. Has ganado ${winAmount} monedas.`,
-          type: "success",
-          confirmText: "Reclamar",
-          onConfirm: () => setAlertConfig(null)
-        });
-      } else {
-        setAlertConfig({
-          visible: true,
-          title: "¡Oh no! 😭",
-          message: "No hubo suerte esta vez. Sigue intentando.",
-          type: "danger",
-          confirmText: "Intentar de nuevo",
-          onConfirm: () => setAlertConfig(null)
-        });
-      }
-    });
+      setAlertConfig({
+        visible: true,
+        title: "Error en el juego",
+        message: e.message || "No se pudo procesar la jugada.",
+        type: "danger",
+        confirmText: "Cerrar",
+        onConfirm: () => setAlertConfig(null)
+      });
+    }
   };
 
   const spinInterpolate = spinAnim.interpolate({

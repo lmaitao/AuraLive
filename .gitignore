@@ -15,3 +15,14 @@ veda
 .DS_Store
 android/
 ios/
+
+# Variables de entorno y secretos
+.env
+.env.*
+!.env.example
+
+# Logs temporales de compilación
+build.txt
+build.json
+eas_build*
+*.log

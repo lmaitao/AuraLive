@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../hooks/useTheme';
 import { supabase } from '../../lib/supabase';
+import { api } from '../../lib/api';
 import { ShieldCheck, Users, CheckCircle, XCircle, ArrowLeft, Building2, Activity, Search, ShieldAlert, Headphones, DollarSign, Ban } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Cyber3DBackground } from '../../components/Cyber3DBackground';
@@ -27,7 +28,7 @@ export default function SuperAdminDashboardScreen() {
     onlineUsers: 0,
     offlineUsers: 0,
     totalAgencies: 0,
-    totalEarnings: 145020.50, // Mocked global earnings
+    totalEarnings: 0,
   });
 
   // Approvals Data
@@ -92,18 +93,26 @@ export default function SuperAdminDashboardScreen() {
       // 1. Load Metrics
       const { count: totalUsers } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
       
-      // Calculate online users (last_seen within 5 minutes). Note: if last_seen isn't heavily updated, this might be 0, so we mock a minimum if needed.
       const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
       const { count: onlineUsers } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).gt('last_seen', fiveMinsAgo);
       
       const { count: totalAgencies } = await supabase.from('agencies').select('*', { count: 'exact', head: true }).eq('status', 'approved');
+
+      // Calcular ingresos reales de la plataforma (50% de órdenes de pago completadas)
+      const { data: paidOrders } = await supabase
+        .from('payment_orders')
+        .select('price_usd')
+        .eq('status', 'completed');
+
+      const grossUsd = (paidOrders || []).reduce((acc, o) => acc + Number(o.price_usd || 0), 0);
+      const platformEarnings = Math.round(grossUsd * 0.5 * 100) / 100;
 
       setMetrics({
         totalUsers: totalUsers || 0,
         onlineUsers: onlineUsers || 0,
         offlineUsers: Math.max(0, (totalUsers || 0) - (onlineUsers || 0)),
         totalAgencies: totalAgencies || 0,
-        totalEarnings: 145020.50,
+        totalEarnings: platformEarnings,
       });
 
       // 2. Load Approvals
@@ -132,7 +141,7 @@ export default function SuperAdminDashboardScreen() {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('profiles')
         .select('id, full_name, email, username, is_banned')
         .or(`email.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%`)
@@ -202,7 +211,6 @@ export default function SuperAdminDashboardScreen() {
   // Support Logic
   const handleResolveTicket = async (ticketId: string) => {
     try {
-      // Supabase update if real ticket, else just remove from UI for demo
       await supabase.from('support_tickets').update({ status: 'resolved' }).eq('id', ticketId);
       setTickets(prev => prev.filter(t => t.id !== ticketId));
       setAlertConfig({
@@ -216,10 +224,10 @@ export default function SuperAdminDashboardScreen() {
     } catch (e) {}
   };
 
-  // Payment Logic
+  // Payment Logic (vía withdrawals-service / RPC review_withdrawal)
   const handleProcessPayment = async (withdrawalId: string) => {
     try {
-      await supabase.from('withdrawal_requests').update({ status: 'completed', processed_at: new Date().toISOString() }).eq('id', withdrawalId);
+      await api.withdrawals.review(withdrawalId, 'approve');
       setWithdrawals(prev => prev.map(w => w.id === withdrawalId ? { ...w, status: 'completed' } : w));
       setAlertConfig({
         visible: true,
@@ -229,22 +237,40 @@ export default function SuperAdminDashboardScreen() {
         confirmText: "Ok",
         onConfirm: () => setAlertConfig(null)
       });
-    } catch (e) {}
+    } catch (e: any) {
+      setAlertConfig({
+        visible: true,
+        title: "Error al procesar pago",
+        message: e.message || "No se pudo aprobar el retiro.",
+        type: "danger",
+        confirmText: "Ok",
+        onConfirm: () => setAlertConfig(null)
+      });
+    }
   };
 
   const handleRejectPayment = async (withdrawalId: string) => {
     try {
-      await supabase.from('withdrawal_requests').update({ status: 'rejected', processed_at: new Date().toISOString() }).eq('id', withdrawalId);
+      await api.withdrawals.review(withdrawalId, 'reject', 'Rechazado por administración');
       setWithdrawals(prev => prev.map(w => w.id === withdrawalId ? { ...w, status: 'rejected' } : w));
       setAlertConfig({
         visible: true,
         title: "Pago Rechazado",
-        message: "Se ha rechazado el retiro de fondos.",
+        message: "Se ha rechazado el retiro y las Auras han sido reembolsadas a la billetera.",
         type: "warning",
         confirmText: "Ok",
         onConfirm: () => setAlertConfig(null)
       });
-    } catch (e) {}
+    } catch (e: any) {
+      setAlertConfig({
+        visible: true,
+        title: "Error al rechazar pago",
+        message: e.message || "No se pudo rechazar el retiro.",
+        type: "danger",
+        confirmText: "Ok",
+        onConfirm: () => setAlertConfig(null)
+      });
+    }
   };
 
   if (loading) {

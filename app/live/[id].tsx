@@ -17,6 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTheme } from "../../hooks/useTheme";
 import { supabase } from "../../lib/supabase";
+import { api } from "../../lib/api";
 import { ZegoVideoEngine } from "../../components/ZegoVideoEngine";
 import { LiveChat, ChatItem } from "../../components/LiveChat";
 import { CloverProgress } from "../../components/CloverProgress";
@@ -178,21 +179,28 @@ export default function LiveRoomScreen() {
   );
 
   const [hostProfile, setHostProfile] = useState<{ full_name: string; avatar_url: string; gender?: string; is_agency?: boolean } | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string>("");
+  const [roomHostId, setRoomHostId] = useState<string>("");
+  const isUuidRoom = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id || ""));
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
+        setCurrentUserId(user.id);
+        if (isHost) {
+          setRoomHostId(user.id);
+        }
+
         supabase.from('profiles').select('*').eq('id', user.id).single().then(({ data }) => {
           if (data) {
-            setHostProfile({
-              full_name: data.full_name,
-              avatar_url: data.avatar_url,
-              gender: data.gender,
-              is_agency: data.is_agency,
-            });
-
-            // Si es espectador (no el presentador de su propia sala), mostrar banner de entrada
-            if (!isHost) {
+            if (isHost) {
+              setHostProfile({
+                full_name: data.full_name,
+                avatar_url: data.avatar_url,
+                gender: data.gender,
+                is_agency: data.is_agency,
+              });
+            } else {
               setCurrentEntrance({
                 username: data.full_name || 'Usuario Aura',
                 isVip: (data.svip_level || 0) > 0 || (data.wealth_level || 0) > 0,
@@ -207,7 +215,26 @@ export default function LiveRoomScreen() {
         });
       }
     });
-  }, []);
+
+    if (isUuidRoom && id) {
+      api.rooms.joinRoom(String(id)).then((roomInfo) => {
+        if (roomInfo?.host_id) {
+          setRoomHostId(roomInfo.host_id);
+          setRealViewerCount(roomInfo.viewer_count || 1);
+          supabase.from('profiles').select('full_name, avatar_url, gender, is_agency').eq('id', roomInfo.host_id).maybeSingle().then(({ data }) => {
+            if (data) {
+              setHostProfile({
+                full_name: data.full_name,
+                avatar_url: data.avatar_url,
+                gender: data.gender,
+                is_agency: data.is_agency,
+              });
+            }
+          });
+        }
+      }).catch(() => {});
+    }
+  }, [id, isHost, isUuidRoom]);
 
   useEffect(() => {
     let streamTimer: NodeJS.Timeout;
@@ -241,7 +268,8 @@ export default function LiveRoomScreen() {
         const convoMap: Record<string, any> = {};
         msgs.forEach(m => {
           const otherId = m.sender_id === user.id ? m.receiver_id : m.sender_id;
-          const otherProfile = m.sender_id === user.id ? m.receiver : m.profiles;
+          const rawOtherProfile = m.sender_id === user.id ? m.receiver : m.profiles;
+          const otherProfile: any = Array.isArray(rawOtherProfile) ? rawOtherProfile[0] : rawOtherProfile;
           if (!convoMap[otherId]) {
             convoMap[otherId] = {
               id: otherId,
@@ -277,6 +305,9 @@ export default function LiveRoomScreen() {
           const next = prev + 1;
           if (next >= 60) {
             clearInterval(interval);
+            if (isUuidRoom && id) {
+              api.rooms.leaveRoom(String(id), realStreamSeconds).catch(() => {});
+            }
             setAlertConfig({
               visible: true,
               title: "Transmisión Finalizada",
@@ -293,7 +324,7 @@ export default function LiveRoomScreen() {
       setFaceLostSeconds(0);
     }
     return () => clearInterval(interval);
-  }, [faceDetected, isHost, router]);
+  }, [faceDetected, isHost, router, isUuidRoom, id, realStreamSeconds]);
 
   const [messages, setMessages] = useState<ChatItem[]>([]);
 
@@ -323,54 +354,51 @@ export default function LiveRoomScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: profile } = await supabase.from('profiles').select('created_at, clover_gift_sent').eq('id', user.id).single();
-
-      if (profile) {
-        const createdDate = new Date(profile.created_at || Date.now());
-        const hoursPassed = (Date.now() - createdDate.getTime()) / (1000 * 60 * 60);
-
-        // Opción A: Tiene el Trébol Dorado Gratuito de Bienvenida (Cumplidas 24h y no ocupado)
-        if (!profile.clover_gift_sent && hoursPassed >= 24) {
-          await supabase.from('profiles').update({ clover_gift_sent: true }).eq('id', user.id);
-          handleGiftSuccess(senderCoins, { name: 'Trébol Dorado 🍀', coinPrice: 300, iconUrl: 'https://cdn-icons-png.flaticon.com/512/346/346195.png' });
-          setAlertConfig({
-            visible: true,
-            title: '¡Trébol Dorado Gratuito Enviado! 🍀',
-            message: 'Has enviado tu Trébol Dorado Gratuito de Bienvenida (+300 Auras para la sala).',
-            type: 'success',
-            confirmText: 'Genial',
-            onConfirm: () => setAlertConfig(null),
-          });
-          return;
-        }
-
-        // Opción B: Enviar usando Monedas (300 monedas)
-        const cloverCost = 300;
-        if (senderCoins >= cloverCost) {
-          handleGiftSuccess(senderCoins - cloverCost, { name: 'Trébol Dorado 🍀', coinPrice: 300, iconUrl: 'https://cdn-icons-png.flaticon.com/512/346/346195.png' });
-          setAlertConfig({
-            visible: true,
-            title: '¡Trébol Dorado Enviado! 🍀',
-            message: `Has enviado 1 Trébol Dorado (-${cloverCost} Monedas, +300 Auras).`,
-            type: 'success',
-            confirmText: 'Aceptar',
-            onConfirm: () => setAlertConfig(null),
-          });
-        } else {
-          setAlertConfig({
-            visible: true,
-            title: 'Saldo Insuficiente 🪙',
-            message: !profile.clover_gift_sent && hoursPassed < 24
-              ? `Tu Trébol Dorado Gratuito 🍀 se activará al cumplir 24h de registro (Faltan ~${Math.ceil(24 - hoursPassed)}h). Recarga 300 monedas para enviar un Trébol Dorado.`
-              : 'Un Trébol Dorado cuesta 300 Monedas. Recarga en la tienda.',
-            type: 'warning',
-            confirmText: 'Entendido',
-            onConfirm: () => setAlertConfig(null),
-          });
-        }
+      const targetReceptorId = selectedUser?.id || roomHostId;
+      if (!targetReceptorId || targetReceptorId === user.id) {
+        setAlertConfig({
+          visible: true,
+          title: 'Acción no disponible',
+          message: 'Selecciona a una presentadora válida para enviar un Trébol Dorado.',
+          type: 'warning',
+          confirmText: 'Entendido',
+          onConfirm: () => setAlertConfig(null),
+        });
+        return;
       }
-    } catch (e) {
-      console.log('Error in quick clover send:', e);
+
+      const res = await api.gifts.sendGift({
+        senderId: user.id,
+        receptorId: targetReceptorId,
+        giftId: 'clover-welcome-1',
+        roomId: isUuidRoom ? String(id) : undefined,
+      });
+
+      handleGiftSuccess(res.new_balance, {
+        name: 'Trébol Dorado 🍀',
+        coinPrice: 300,
+        iconUrl: 'https://cdn-icons-png.flaticon.com/512/346/346195.png',
+      });
+
+      setAlertConfig({
+        visible: true,
+        title: res.was_free_clover ? '¡Trébol Dorado Gratuito Enviado! 🍀' : '¡Trébol Dorado Enviado! 🍀',
+        message: res.was_free_clover
+          ? 'Has enviado tu Trébol Dorado Gratuito de Bienvenida (+300 Auras para la sala).'
+          : `Has enviado 1 Trébol Dorado (-300 Monedas, +${res.auras_credited} Auras).`,
+        type: 'success',
+        confirmText: 'Genial',
+        onConfirm: () => setAlertConfig(null),
+      });
+    } catch (e: any) {
+      setAlertConfig({
+        visible: true,
+        title: 'No se pudo enviar 🍀',
+        message: e.message || 'Un Trébol Dorado cuesta 300 Monedas (o es gratuito al cumplir 24h de registro).',
+        type: 'warning',
+        confirmText: 'Entendido',
+        onConfirm: () => setAlertConfig(null),
+      });
     }
   };
 
@@ -407,6 +435,9 @@ export default function LiveRoomScreen() {
     if (isHost) {
       setExitStreamModalVisible(true);
     } else {
+      if (isUuidRoom && id) {
+        api.rooms.leaveRoom(String(id), 0).catch(() => {});
+      }
       router.back();
     }
   };
@@ -610,9 +641,10 @@ export default function LiveRoomScreen() {
       <GiftModal
         visible={giftModalVisible}
         onClose={() => setGiftModalVisible(false)}
-        senderId="user-me-123"
-        receptorId="host-streamer-456"
-        receptorGender="female"
+        senderId={currentUserId}
+        receptorId={selectedUser?.id || roomHostId || currentUserId}
+        roomId={isUuidRoom ? String(id) : undefined}
+        receptorGender={(hostProfile?.gender as "female" | "male") || "female"}
         receptorIsStreamer={true}
         senderCoins={senderCoins}
         onGiftSentSuccess={handleGiftSuccess}
@@ -625,6 +657,7 @@ export default function LiveRoomScreen() {
       <InteractiveGamesModal
         visible={gamesModalVisible}
         onClose={() => setGamesModalVisible(false)}
+        roomId={String(id || 'game-room')}
       />
       <EventsPlazaModal
         visible={eventsModalVisible}
@@ -816,8 +849,11 @@ export default function LiveRoomScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={() => {
+                onPress={async () => {
                   setExitStreamModalVisible(false);
+                  if (isUuidRoom && id) {
+                    await api.rooms.leaveRoom(String(id), realStreamSeconds).catch(() => {});
+                  }
                   router.replace("/(tabs)/feed" as any);
                 }}
                 activeOpacity={0.85}

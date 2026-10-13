@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Alert, ActivityIndicator, StyleSheet } from 'react-native';
 import { useTheme } from '../hooks/useTheme';
 import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { Gift, Sparkles, CheckCircle2, Clock } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -24,20 +25,20 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({ userId, onCl
 
   const checkCheckinStatus = async () => {
     try {
-      const { data } = await supabase
-        .from('profiles')
-        .select('last_checkin_date')
-        .eq('id', userId)
-        .maybeSingle();
+      const [{ data: profileData }, { data: walletData }] = await Promise.all([
+        supabase.from('profiles').select('last_checkin_date').eq('id', userId).maybeSingle(),
+        supabase.from('wallets').select('last_daily_checkin').eq('user_id', userId).maybeSingle(),
+      ]);
 
-      if (data?.last_checkin_date) {
-        const lastDate = new Date(data.last_checkin_date).getTime();
+      const lastTimestamp = walletData?.last_daily_checkin || profileData?.last_checkin_date;
+      if (lastTimestamp) {
+        const lastDate = new Date(lastTimestamp).getTime();
         const now = Date.now();
         const diffHours = (now - lastDate) / (1000 * 60 * 60);
 
         if (diffHours < 24) {
           setClaimedToday(true);
-          const remainingHours = Math.ceil(24 - diffHours);
+          const remainingHours = Math.max(1, Math.ceil(24 - diffHours));
           setTimeRemaining(`${remainingHours}h`);
         } else {
           setClaimedToday(false);
@@ -52,24 +53,18 @@ export const DailyCheckinCard: React.FC<DailyCheckinCardProps> = ({ userId, onCl
   const handleClaim = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.rpc('claim_daily_checkin', {
-        p_user_id: userId,
-      });
-
-      if (error) {
-        Alert.alert('Cofre Diario', error.message);
-        if (error.message.includes('hoy') || error.message.includes('24')) {
-          setClaimedToday(true);
-        }
-      } else {
-        const added = data?.coins_awarded ?? 25;
-        setClaimedToday(true);
-        setTimeRemaining('24h');
-        onClaimSuccess(added);
-        Alert.alert('¡Cofre Reclamado! 🎁', `Has recibido +${added} monedas gratis. Próximo reclamo en 24 horas.`);
-      }
+      const res = await api.wallet.claimDailyCheckin(userId);
+      const added = res.coins_awarded ?? 25;
+      setClaimedToday(true);
+      setTimeRemaining('24h');
+      onClaimSuccess(added);
+      Alert.alert('¡Cofre Reclamado! 🎁', `Has recibido +${added} monedas gratis. Próximo reclamo en 24 horas.`);
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Error de conexión.');
+      const msg = err.message || 'Error de conexión.';
+      Alert.alert('Cofre Diario', msg);
+      if (msg.includes('hoy') || msg.includes('24')) {
+        setClaimedToday(true);
+      }
     } finally {
       setLoading(false);
     }

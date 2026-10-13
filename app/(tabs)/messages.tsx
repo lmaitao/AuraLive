@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet, TextInput, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, Image, StyleSheet, TextInput, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../hooks/useTheme';
@@ -56,7 +56,8 @@ export default function MessagesScreen() {
           const convoMap: Record<string, any> = {};
           msgs.forEach(m => {
             const otherId = m.sender_id === user.id ? m.receiver_id : m.sender_id;
-            const otherProfile = m.sender_id === user.id ? m.receiver : m.profiles;
+            const rawOtherProfile = m.sender_id === user.id ? m.receiver : m.profiles;
+            const otherProfile: any = Array.isArray(rawOtherProfile) ? rawOtherProfile[0] : rawOtherProfile;
             if (!convoMap[otherId]) {
               convoMap[otherId] = {
                 id: otherId,
@@ -250,7 +251,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: 1,
@@ -332,7 +333,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 10,
     alignItems: 'center',
-    justify: 'center',
+    justifyContent: 'center',
   },
   unreadText: {
     color: '#FFF',

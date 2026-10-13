@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../hooks/useTheme';
 import { supabase } from '../../lib/supabase';
+import { api } from '../../lib/api';
 import { DailyCheckinCard } from '../../components/DailyCheckinCard';
 import { User, Users, Wallet, ShieldCheck, Award, Building2, ShieldAlert, LogOut, ChevronRight, Plus, Image as ImageIcon, Trash2, Camera, Sparkles, CheckCircle2, ScanFace, X, Camera as CameraIcon } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -41,17 +42,27 @@ export default function UserProfileScreen() {
   const [profile, setProfile] = useState<{
     id: string;
     full_name: string;
-    email: string;
+    email?: string;
     avatar_url: string;
     gender: string;
-    phone_number: string;
+    phone_number?: string;
     birth_date: string;
     bio: string;
+    status?: string;
     is_identity_verified: boolean;
     is_agency?: boolean;
     is_agency_account?: boolean;
     is_streamer?: boolean;
     is_superadmin?: boolean;
+    clover_gift_sent?: boolean;
+    has_recharged?: boolean;
+    agency_id?: string | null;
+    agency_request_status?: string;
+    charisma_level?: number;
+    charisma_experience?: number;
+    svip_level?: number;
+    wealth_level?: number;
+    photo_gallery?: string[];
   } | null>(null);
 
   const [walletBalance, setWalletBalance] = useState(0);
@@ -112,8 +123,17 @@ export default function UserProfileScreen() {
           is_superadmin: false,
         };
         try {
-          await supabase.from('profiles').upsert(pData);
-        } catch (_) {}
+          await api.account.completeOnboarding({
+            full_name: pData.full_name,
+            avatar_url: pData.avatar_url,
+            gender: 'female',
+            birth_date: '2000-01-01',
+          });
+        } catch (_) {
+          try {
+            await supabase.from('profiles').upsert(pData);
+          } catch (_) {}
+        }
       }
 
       setProfile(pData);
@@ -122,15 +142,18 @@ export default function UserProfileScreen() {
       setCharismaLevel(pData.charisma_level || Math.floor((pData.charisma_experience || 0) / 1000) || 0);
       setPhotoGallery(pData.photo_gallery || []);
 
-      if (pData.agency_id) {
+      if (pData.agency_id && pData.agency_request_status !== 'pending') {
         setAgencyRequestStatus('linked');
         setLinkedAgencyId(pData.agency_id);
+      } else if (pData.agency_request_status === 'pending') {
+        setAgencyRequestStatus('pending');
+        setLinkedAgencyId(pData.agency_id || null);
       } else {
         setAgencyRequestStatus('none');
         setLinkedAgencyId(null);
       }
 
-      // Fetch Wallet safely
+      // Fetch Wallet safely (solo lectura; el servidor crea y modifica la billetera)
       try {
         const { data: walletData } = await supabase
           .from('wallets')
@@ -143,12 +166,6 @@ export default function UserProfileScreen() {
           setAurasBalance(walletData.aura_balance || 0);
           setCloverBalance(walletData.clover_balance ?? 3);
           setCharismaLevel(Math.floor((walletData.aura_balance || 0) / 100));
-        } else {
-          // Create default wallet
-          await supabase.from('wallets').upsert({ user_id: user.id, coin_balance: 1000, aura_balance: 0, clover_balance: 3 });
-          setWalletBalance(1000);
-          setAurasBalance(0);
-          setCloverBalance(3);
         }
       } catch (wErr) {
         console.log('Wallet fetch notice:', wErr);
@@ -189,7 +206,8 @@ export default function UserProfileScreen() {
   const [exchangeModalVisible, setExchangeModalVisible] = useState(false);
   const [aurasToExchange, setAurasToExchange] = useState('5');
 
-  const handleExchangeAuras = () => {
+  const handleExchangeAuras = async () => {
+    if (!profile) return;
     const amount = parseInt(aurasToExchange, 10);
     if (isNaN(amount) || amount <= 0) {
       Alert.alert('Error', 'Ingresa una cantidad válida de Auras.');
@@ -200,15 +218,19 @@ export default function UserProfileScreen() {
       return;
     }
 
-    const coinsGained = amount * 100;
-    setAurasBalance((prev) => prev - amount);
-    setWalletBalance((prev) => prev + coinsGained);
-    setExchangeModalVisible(false);
+    try {
+      const res = await api.wallet.exchangeAurasForCoins(profile.id, amount);
+      setAurasBalance(res.new_auras);
+      setWalletBalance(res.new_coins);
+      setExchangeModalVisible(false);
 
-    Alert.alert(
-      '¡Intercambio Exitoso! 🔮➡️🪙',
-      `Has canjeado ${amount} Auras por +${coinsGained.toLocaleString()} Monedas virtuales.`
-    );
+      Alert.alert(
+        '¡Intercambio Exitoso! 🔮➡️🪙',
+        `Has canjeado ${amount} Auras por +${res.coins_added.toLocaleString()} Monedas virtuales.`
+      );
+    } catch (e: any) {
+      Alert.alert('Error en el canje', e.message || 'No se pudo completar el canje.');
+    }
   };
 
   const [photoGallery, setPhotoGallery] = useState<string[]>([]);
@@ -380,38 +402,34 @@ export default function UserProfileScreen() {
     try {
       const res = await simulateLivenessScan(profile.id, profile.gender || 'female');
       if (res.success && res.isRealHuman && res.hash) {
-        const { error } = await supabase.rpc('liveness_verify', {
-          p_user_id: profile.id,
-          p_face_signature_hash: res.hash,
-        });
+        try {
+          const verifyRes = await api.biometrics.verifyLiveness(profile.id, res.hash);
+          const genderLabel = profile.gender === 'female' ? 'Mujer ♀️' : 'Hombre ♂️';
 
-        if (error) {
+          setProfile(prev => prev ? { ...prev, is_identity_verified: true, status: 'verified' } : null);
+          setWalletBalance(verifyRes.new_balance ?? (walletBalance + 50));
+          setLivenessModalVisible(false);
+
+          setAlertConfig({
+            visible: true,
+            title: '¡Verificación Facial Exitosa! 🎉',
+            message: `Identidad Humana Real Verificada (${genderLabel}). Tu rostro ha sido validado de forma única. ¡Se han acreditado +${verifyRes.coins_rewarded ?? 50} Monedas a tu billetera y asignado la insignia VERIFICADO ✅!`,
+            type: 'success',
+            confirmText: '¡Excelente!',
+            onConfirm: () => setAlertConfig(null),
+          });
+        } catch (rpcErr: any) {
           setLivenessModalVisible(false);
           setAlertConfig({
             visible: true,
             title: 'Verificación Facial Rechazada ⚠️',
-            message: 'Este rostro ya se encuentra vinculado a otra cuenta registrada anteriormente. La política de la plataforma prohíbe duplicar perfiles o registrar múltiples cuentas con la misma identidad facial.',
+            message: rpcErr.message || 'Este rostro ya se encuentra vinculado a otra cuenta registrada anteriormente.',
             type: 'danger',
             confirmText: 'Entendido',
             onConfirm: () => setAlertConfig(null),
           });
           return;
         }
-
-        const genderLabel = profile.gender === 'female' ? 'Mujer ♀️' : 'Hombre ♂️';
-
-        setProfile(prev => prev ? { ...prev, is_identity_verified: true, status: 'verified' } : null);
-        setWalletBalance(prev => prev + 50);
-        setLivenessModalVisible(false);
-
-        setAlertConfig({
-          visible: true,
-          title: '¡Verificación Facial Exitosa! 🎉',
-          message: `Identidad Humana Real Verificada (${genderLabel}). Tu rostro ha sido validado de forma única. ¡Se han acreditado +50 Monedas a tu billetera y asignado la insignia VERIFICADO ✅!`,
-          type: 'success',
-          confirmText: '¡Excelente!',
-          onConfirm: () => setAlertConfig(null),
-        });
       }
     } catch (e: any) {
       setLivenessModalVisible(false);
@@ -453,38 +471,9 @@ export default function UserProfileScreen() {
     try {
       if (!profile) return;
       setLoadingProfile(true);
-      const userId = profile.id;
 
-      // 1. Try RPC function delete_user_account
-      const { error: rpcErr } = await supabase.rpc('delete_user_account', { p_user_id: userId });
+      await api.account.deleteAccount();
 
-      if (rpcErr) {
-        console.log('RPC delete_user_account fallback, executing direct cascading deletion:', rpcErr.message);
-
-        // 2. Direct cascading cleanup of ALL user tables and content
-        await Promise.allSettled([
-          supabase.from('wallets').delete().eq('user_id', userId),
-          supabase.from('followers').delete().eq('follower_id', userId),
-          supabase.from('followers').delete().eq('following_id', userId),
-          supabase.from('reels').delete().eq('user_id', userId),
-          supabase.from('posts').delete().eq('user_id', userId),
-          supabase.from('direct_messages').delete().eq('sender_id', userId),
-          supabase.from('direct_messages').delete().eq('receiver_id', userId),
-          supabase.from('room_messages').delete().eq('user_id', userId),
-          supabase.from('streamer_daily_missions').delete().eq('user_id', userId),
-          supabase.from('support_tickets').delete().eq('user_id', userId),
-          supabase.from('withdrawal_requests').delete().eq('user_id', userId),
-          supabase.from('agencies').delete().eq('owner_id', userId),
-        ]);
-
-        // 3. Delete Profile Record from Supabase
-        const { error: deleteErr } = await supabase.from('profiles').delete().eq('id', userId);
-        if (deleteErr) {
-          throw new Error('Error al borrar de Supabase: ' + deleteErr.message);
-        }
-      }
-
-      // 4. Sign out and redirect to login
       await supabase.auth.signOut();
       router.replace('/auth/login' as any);
       Alert.alert('Cuenta Eliminada ✅', 'Tu cuenta y todos tus datos fueron borrados permanentemente de Supabase.');
@@ -521,7 +510,7 @@ export default function UserProfileScreen() {
               </View>
               {svipLevel > 0 && (
                 <View style={{ position: 'absolute', bottom: -6, alignSelf: 'center', backgroundColor: '#EAB308', paddingHorizontal: 10, paddingVertical: 2, borderRadius: 12, borderWidth: 1, borderColor: '#FEF08A' }}>
-                  <Text style={{ color: '#000', fontWeight: '900', fontSize: 10, italic: 'italic' }}>SVIP {svipLevel}</Text>
+                  <Text style={{ color: '#000', fontWeight: '900', fontSize: 10, fontStyle: 'italic' }}>SVIP {svipLevel}</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -699,7 +688,7 @@ export default function UserProfileScreen() {
                   </View>
                 </View>
                 <View style={{ backgroundColor: 'rgba(234,179,8,0.2)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, borderWidth: 1, borderColor: '#FDE047' }}>
-                  <Text style={{ color: '#EAB308', fontWeight: '900', fontSize: 10, italic: 'italic' }}>SVIP {svipLevel}</Text>
+                  <Text style={{ color: '#EAB308', fontWeight: '900', fontSize: 10, fontStyle: 'italic' }}>SVIP {svipLevel}</Text>
                 </View>
               </LinearGradient>
             </TouchableOpacity>
@@ -1139,21 +1128,26 @@ export default function UserProfileScreen() {
             />
 
             <TouchableOpacity
-              onPress={() => {
+              onPress={async () => {
                 if (!inputAgencyCode.trim()) {
                   Alert.alert('ID Requerido', 'Por favor ingresa el ID o Código de la Agencia.');
                   return;
                 }
-                setAgencyRequestStatus('pending');
-                setAgencyJoinModalVisible(false);
-                setAlertConfig({
-                  visible: true,
-                  title: 'Solicitud Enviada 🏢',
-                  message: `Has enviado la solicitud de vinculación a la Agencia ${inputAgencyCode}. Una vez que la agencia la apruebe en su panel, tu Panel de Presentadora y Metas se activarán automáticamente.`,
-                  type: 'success',
-                  confirmText: 'Entendido',
-                  onConfirm: () => setAlertConfig(null)
-                });
+                try {
+                  await api.account.joinAgency(inputAgencyCode.trim());
+                  setAgencyRequestStatus('pending');
+                  setAgencyJoinModalVisible(false);
+                  setAlertConfig({
+                    visible: true,
+                    title: 'Solicitud Enviada 🏢',
+                    message: `Has enviado la solicitud de vinculación a la Agencia ${inputAgencyCode}. Una vez que la agencia la apruebe en su panel, tu Panel de Presentadora y Metas se activarán automáticamente.`,
+                    type: 'success',
+                    confirmText: 'Entendido',
+                    onConfirm: () => setAlertConfig(null)
+                  });
+                } catch (e: any) {
+                  Alert.alert('Error', e.message || 'No se encontró una agencia activa con ese código.');
+                }
               }}
               style={{ borderRadius: 18, overflow: 'hidden' }}
             >

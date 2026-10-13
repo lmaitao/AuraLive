@@ -46,7 +46,7 @@ class ZegoService {
   async loginRoom(roomID: string, userID: string, userName: string) {
     if (!this.engine) await this.initEngine();
     console.log(`📡 Entrando a la sala WebRTC: ${roomID}`);
-    return await this.engine?.loginRoom(roomID, { userID, userName });
+    return await this.engine?.loginRoom(roomID, { userID, userName }, undefined);
   }
 
   async logoutRoom(roomID: string) {
@@ -56,12 +56,12 @@ class ZegoService {
 
   async startPublishingStream(streamID: string) {
     console.log(`🎥 Publicando stream: ${streamID}`);
-    await this.engine?.startPublishingStream(streamID);
+    await this.engine?.startPublishingStream(streamID, undefined, undefined);
   }
 
   async stopPublishingStream() {
     console.log(`🛑 Deteniendo stream local`);
-    await this.engine?.stopPublishingStream();
+    await this.engine?.stopPublishingStream(undefined);
   }
 
   async destroyEngine() {

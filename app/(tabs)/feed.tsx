@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../hooks/useTheme';
 import { supabase } from '../../lib/supabase';
+import { api } from '../../lib/api';
 import { Search, Trophy, Plus, Video, Users, Sparkles, Flame } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -289,7 +290,22 @@ export default function FeedScreen() {
               <TouchableOpacity onPress={() => setCreateRoomModalVisible(false)} style={{ flex: 1, paddingVertical: 14, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 14 }}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => { setCreateRoomModalVisible(false); router.push({ pathname: '/live/[id]', params: { id: 'host-123', isHost: 'true', layout: selectedRoomLayout } } as any); }} style={{ flex: 1 }}>
+              <TouchableOpacity
+                onPress={async () => {
+                  setCreateRoomModalVisible(false);
+                  try {
+                    const room = await api.rooms.createRoom({
+                      title: 'En Vivo en AuraLive ✨',
+                      category: 'Variedad',
+                      layoutMode: selectedRoomLayout === '4cam' ? '4_cam' : '8_cam',
+                    });
+                    router.push({ pathname: '/live/[id]', params: { id: room.id, isHost: 'true', layout: selectedRoomLayout } } as any);
+                  } catch (e: any) {
+                    Alert.alert('Error al crear sala', e.message || 'Verifica tu sesión e intenta nuevamente.');
+                  }
+                }}
+                style={{ flex: 1 }}
+              >
                 <LinearGradient colors={['#00E5FF', '#0284C7']} style={{ paddingVertical: 14, borderRadius: 28, alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{ color: '#000', fontWeight: '900', fontSize: 14 }}>¡Transmitir!</Text>
                 </LinearGradient>

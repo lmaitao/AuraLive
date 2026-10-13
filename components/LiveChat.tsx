@@ -130,9 +130,7 @@ export const LiveChat: React.FC<LiveChatProps> = ({ roomId, messages, onSendMess
           <FlashList
             data={messages}
             renderItem={renderItem}
-            estimatedItemSize={38}
             keyExtractor={(item) => item.id}
-            inverted={false}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           />

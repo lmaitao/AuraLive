@@ -1,31 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, Modal, TouchableOpacity, Image, Alert, ActivityIndicator, StyleSheet, ScrollView } from 'react-native';
-import { useTheme } from '../hooks/useTheme';
-import { supabase } from '../lib/supabase';
-import { X, Gift as GiftIcon, Coins, ShieldAlert, Sparkles, Flame, PlayCircle } from 'lucide-react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, Modal, TouchableOpacity, Image, ActivityIndicator, StyleSheet, ScrollView } from 'react-native';
+import { api, GiftCatalogItem, FALLBACK_GIFTS } from '../lib/api';
+import { X, Gift as GiftIcon, Coins, ShieldAlert } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AuraAlert, AuraAlertProps } from './AuraAlert';
 
-export interface GiftItem {
-  id: string;
-  name: string;
-  coinPrice: number;
-  iconUrl: string;
-  isExclusive: boolean;
-  category: 'Popular' | 'Lujo' | 'VIP' | 'Efectos';
-  lottieUrl?: string;
-}
-
-const DEFAULT_GIFTS: GiftItem[] = [
-  { id: 'clover-welcome-1', name: 'Trébol Dorado 🍀 (1 Gratis 24h)', coinPrice: 300, iconUrl: 'https://cdn-icons-png.flaticon.com/512/346/346195.png', lottieUrl: 'https://lottie.host/8c1303ed-7cfa-4ebf-801a-8ff6cc6eb2c2/2O0p2c34kK.json', isExclusive: false, category: 'Popular' },
-  { id: '1', name: 'Rosa Neón 🌹', coinPrice: 100, iconUrl: 'https://cdn-icons-png.flaticon.com/512/3004/3004071.png', lottieUrl: 'https://lottie.host/8c1303ed-7cfa-4ebf-801a-8ff6cc6eb2c2/2O0p2c34kK.json', isExclusive: false, category: 'Popular' },
-  { id: '2', name: 'Beso Cyber 💋', coinPrice: 300, iconUrl: 'https://cdn-icons-png.flaticon.com/512/2850/2850550.png', lottieUrl: 'https://lottie.host/80769d49-411a-42cd-bb43-7f72295240c5/Z5f5u9bN0S.json', isExclusive: false, category: 'Popular' },
-  { id: '3', name: 'Corona Diamante 👑', coinPrice: 1000, iconUrl: 'https://cdn-icons-png.flaticon.com/512/714/714407.png', lottieUrl: 'https://lottie.host/17e5a7b6-cc7d-417d-bebb-42df6495d4d3/7oG9Y8N4uH.json', isExclusive: false, category: 'Lujo' },
-  { id: '4', name: 'Nave Espacial 🚀', coinPrice: 5000, iconUrl: 'https://cdn-icons-png.flaticon.com/512/3255/3255057.png', lottieUrl: 'https://lottie.host/98c5d14e-d98c-447b-83de-ec5c0d5926be/lI1f4Ww7N4.json', isExclusive: false, category: 'Lujo' },
-  { id: '5', name: 'Dragón Legendario 🐉', coinPrice: 20000, iconUrl: 'https://cdn-icons-png.flaticon.com/512/5725/5725514.png', lottieUrl: 'https://lottie.host/95d82998-1cd5-46eb-81c8-db28b9c647b0/Xz4x2hO4YI.json', isExclusive: true, category: 'VIP' },
-  { id: '6', name: 'Auto Lujo 3D 🏎️', coinPrice: 50000, iconUrl: 'https://cdn-icons-png.flaticon.com/512/3204/3204918.png', lottieUrl: 'https://lottie.host/e2d08a50-6eb6-4556-9130-1c667a4214f5/H8S3p4Z7P2.json', isExclusive: true, category: 'VIP' },
-  { id: '7', name: 'Universo Aura 🌌 ($200 USD)', coinPrice: 200000, iconUrl: 'https://cdn-icons-png.flaticon.com/512/3204/3204918.png', lottieUrl: 'https://lottie.host/e2d08a50-6eb6-4556-9130-1c667a4214f5/H8S3p4Z7P2.json', isExclusive: true, category: 'VIP' },
-];
+export type GiftItem = GiftCatalogItem;
 
 interface GiftModalProps {
   visible: boolean;
@@ -35,7 +15,8 @@ interface GiftModalProps {
   receptorGender: string;
   receptorIsStreamer: boolean;
   senderCoins: number;
-  onGiftSentSuccess: (newBalance: number, gift?: GiftItem) => void;
+  roomId?: string;
+  onGiftSentSuccess: (newBalance: number, gift?: GiftItem, receptorAurasAdded?: number) => void;
 }
 
 export const GiftModal: React.FC<GiftModalProps> = ({
@@ -43,106 +24,83 @@ export const GiftModal: React.FC<GiftModalProps> = ({
   onClose,
   senderId,
   receptorId,
-  receptorGender,
-  receptorIsStreamer,
   senderCoins,
+  roomId,
   onGiftSentSuccess,
 }) => {
-  const theme = useTheme();
-  const [selectedGift, setSelectedGift] = useState<GiftItem | null>(DEFAULT_GIFTS[0]);
+  const [gifts, setGifts] = useState<GiftItem[]>(FALLBACK_GIFTS);
+  const [selectedGift, setSelectedGift] = useState<GiftItem | null>(FALLBACK_GIFTS[0]);
   const [activeCategory, setActiveCategory] = useState<'Popular' | 'Lujo' | 'VIP' | 'Efectos'>('Popular');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [alertConfig, setAlertConfig] = useState<AuraAlertProps | null>(null);
 
+  useEffect(() => {
+    if (visible) {
+      setErrorMessage(null);
+      api.catalogs.getGifts().then((items) => {
+        if (items.length > 0) {
+          setGifts(items);
+          setSelectedGift((prev) => items.find((g) => g.id === prev?.id) || items[0]);
+        }
+      }).catch(() => {});
+    }
+  }, [visible]);
+
   const handleSendGift = async () => {
     if (!selectedGift) return;
     setErrorMessage(null);
 
-    if (senderId && receptorId && senderId === receptorId) {
-      setErrorMessage('No puedes enviarte regalos a ti mismo. Elige a otro participante de la sala.');
+    if (!senderId) {
+      setErrorMessage('Debes iniciar sesión para enviar regalos.');
       return;
     }
 
-    // Regla Trébol Dorado: 1 Gratis al registrarse (activado a las 24h), luego 300 Monedas cada uno
-    let effectivePrice = selectedGift.coinPrice;
-    if (selectedGift.id === 'clover-welcome-1') {
-      try {
-        const { data: profile } = await supabase.from('profiles').select('created_at, clover_gift_sent').eq('id', senderId).single();
-        if (profile) {
-          if (!profile.clover_gift_sent) {
-            const createdDate = new Date(profile.created_at || Date.now());
-            const hoursPassed = (Date.now() - createdDate.getTime()) / (1000 * 60 * 60);
-
-            if (hoursPassed < 24) {
-              const hoursLeft = Math.ceil(24 - hoursPassed);
-              setErrorMessage(`Tu Trébol Dorado Gratuito 🍀 se activará automáticamente al cumplir 24h de registro (Faltan ~${hoursLeft}h). Puedes comprar uno por 300 monedas.`);
-              if (senderCoins < 300) return;
-            } else {
-              // Es el trébol gratuito
-              effectivePrice = 0;
-              await supabase.from('profiles').update({ clover_gift_sent: true }).eq('id', senderId);
-            }
-          }
-        }
-      } catch (e) {
-        console.log('Error verifying welcome clover activation:', e);
-      }
+    if (!receptorId) {
+      setErrorMessage('No hay un destinatario válido seleccionado en la sala.');
+      return;
     }
 
-    if (senderCoins < effectivePrice) {
-      setErrorMessage(`Saldo insuficiente. Un Trébol Dorado cuesta 300 Monedas.`);
+    if (senderId === receptorId) {
+      setErrorMessage('No puedes enviarte regalos a ti mismo. Elige a otro participante de la sala.');
       return;
     }
 
     setLoading(true);
     try {
-      const { data, error } = await supabase.rpc('send_gift', {
-        p_sender_id: senderId,
-        p_receptor_id: receptorId,
-        p_gift_id: selectedGift.id,
+      const res = await api.gifts.sendGift({
+        senderId,
+        receptorId,
+        giftId: selectedGift.id,
+        roomId: roomId || null,
       });
 
-      if (error) {
-        const newBal = senderCoins - effectivePrice;
-        onGiftSentSuccess(newBal, { ...selectedGift, coinPrice: effectivePrice });
-        setAlertConfig({
-          visible: true,
-          title: "¡Regalo Enviado! 🎁",
-          message: `Has enviado ${selectedGift.name} a la sala.`,
-          type: "success",
-          confirmText: "Genial",
-          onConfirm: () => { setAlertConfig(null); onClose(); }
-        });
-      } else {
-        const newBal = data?.sender_balance ?? (senderCoins - selectedGift.coinPrice);
-        onGiftSentSuccess(newBal, selectedGift);
-        setAlertConfig({
-          visible: true,
-          title: "¡Regalo Enviado! 🎁",
-          message: `Has enviado ${selectedGift.name} con éxito.`,
-          type: "success",
-          confirmText: "Genial",
-          onConfirm: () => { setAlertConfig(null); onClose(); }
-        });
-      }
-    } catch (err: any) {
-      const newBal = senderCoins - selectedGift.coinPrice;
-      onGiftSentSuccess(newBal, selectedGift);
+      const newBal = Number(res.sender_balance ?? Math.max(0, senderCoins - (res.effective_price ?? selectedGift.coinPrice)));
+      onGiftSentSuccess(
+        newBal,
+        { ...selectedGift, coinPrice: Number(res.effective_price ?? selectedGift.coinPrice) },
+        Number(res.receptor_auras_added ?? 0)
+      );
+
       setAlertConfig({
         visible: true,
-        title: "¡Regalo Enviado! 🎁",
-        message: `Has enviado ${selectedGift.name} a la sala.`,
-        type: "success",
-        confirmText: "Genial",
-        onConfirm: () => { setAlertConfig(null); onClose(); }
+        title: '¡Regalo Enviado! 🎁',
+        message: `Has enviado ${selectedGift.name} con éxito.`,
+        type: 'success',
+        confirmText: 'Genial',
+        onConfirm: () => {
+          setAlertConfig(null);
+          onClose();
+        },
       });
+    } catch (err: any) {
+      setErrorMessage(err.message || 'No se pudo enviar el regalo.');
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredGifts = DEFAULT_GIFTS.filter(g => g.category === activeCategory || activeCategory === 'Popular');
+  const filteredGifts = gifts.filter((g) => g.category === activeCategory || activeCategory === 'Popular');
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>

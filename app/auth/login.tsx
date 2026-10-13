@@ -7,8 +7,8 @@ import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTheme } from '../../hooks/useTheme';
 import { supabase } from '../../lib/supabase';
+import { api } from '../../lib/api';
 import { simulateLivenessScan } from '../../utils/biometricMock';
-import { sendOtpEmail, sendPasswordResetEmail, sendPasswordChangedEmail } from '../../utils/emailService';
 import { ShieldAlert, Sparkles, Lock, Mail, UserCheck, ScanFace, CheckCircle2, Image as ImageIcon, ArrowRight, KeyRound, CalendarDays, ArrowLeft } from 'lucide-react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -88,14 +88,12 @@ export default function LoginAuthScreen() {
   // Forgot Password State
   const [forgotStep, setForgotStep] = useState<'request' | 'update'>('request');
   const [resetEmail, setResetEmail] = useState('');
-  const [generatedResetCode, setGeneratedResetCode] = useState('654321');
   const [inputResetCode, setInputResetCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
   // OTP Modal State
   const [emailOtpModalVisible, setEmailOtpModalVisible] = useState(false);
   const [emailOtpCode, setEmailOtpCode] = useState('');
-  const [generatedOtpCode, setGeneratedOtpCode] = useState('123456');
 
   // Liveness Modal State
   const [livenessModalVisible, setLivenessModalVisible] = useState(false);
@@ -137,11 +135,11 @@ export default function LoginAuthScreen() {
           const { url } = res;
 
           // Extraer parámetros de Query string (?) y Hash fragment (#)
-          const { params } = QueryParams.getQueryParams(url);
+          const { params: queryParams } = QueryParams.getQueryParams(url);
           
-          let code = params.code;
-          let access_token = params.access_token;
-          let refresh_token = params.refresh_token;
+          let code: string | undefined = Array.isArray(queryParams.code) ? queryParams.code[0] : queryParams.code;
+          let access_token: string | undefined = Array.isArray(queryParams.access_token) ? queryParams.access_token[0] : queryParams.access_token;
+          let refresh_token: string | undefined = Array.isArray(queryParams.refresh_token) ? queryParams.refresh_token[0] : queryParams.refresh_token;
 
           // Fallback: extraer de hash fragment si la URL contiene #
           if (!code && !access_token && url.includes('#')) {
@@ -175,32 +173,40 @@ export default function LoginAuthScreen() {
 
           if (user) {
             // Consultar perfil en Supabase
-            let { data: profile } = await supabase
+            const { data: profile } = await supabase
               .from('profiles')
               .select('gender, birth_date')
               .eq('id', user.id)
               .maybeSingle();
 
-            // Si el perfil no existe aún en la BD, crearlo con datos del OAuth
+            // Si el perfil no existe aún en la BD, crearlo mediante account-service o upsert
             if (!profile) {
-              const username = user.email
-                ? user.email.split('@')[0] + '_' + user.id.slice(0, 4)
-                : 'usuario_' + user.id.slice(0, 4);
-
               const full_name = user.user_metadata?.full_name || user.user_metadata?.name || 'Usuario Aura';
               const avatar_url = user.user_metadata?.avatar_url || user.user_metadata?.picture || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400';
 
-              await supabase.from('profiles').upsert({
-                id: user.id,
-                email: user.email || '',
-                username,
-                full_name,
-                avatar_url,
-                gender: gender || 'female',
-                birth_date: '2000-01-01',
-                status: 'verified',
-                is_identity_verified: false,
-              }, { onConflict: 'id' });
+              try {
+                await api.account.completeOnboarding({
+                  full_name,
+                  avatar_url,
+                  gender: gender || 'female',
+                  birth_date: '2000-01-01',
+                });
+              } catch (_) {
+                const username = user.email
+                  ? user.email.split('@')[0] + '_' + user.id.slice(0, 4)
+                  : 'usuario_' + user.id.slice(0, 4);
+                await supabase.from('profiles').upsert({
+                  id: user.id,
+                  email: user.email || '',
+                  username,
+                  full_name,
+                  avatar_url,
+                  gender: gender || 'female',
+                  birth_date: '2000-01-01',
+                  status: 'verified',
+                  is_identity_verified: false,
+                }, { onConflict: 'id' });
+              }
 
               router.replace('/(tabs)/feed' as any);
             } else {
@@ -226,23 +232,25 @@ export default function LoginAuthScreen() {
     }
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        // Formatear DD/MM/YYYY a YYYY-MM-DD para columna DATE de PostgreSQL
-        let formattedDate = birthDate;
-        if (birthDate.includes('/')) {
-          const parts = birthDate.split('/');
-          if (parts.length === 3) {
-            formattedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
-          }
+      let formattedDate = birthDate;
+      if (birthDate.includes('/')) {
+        const parts = birthDate.split('/');
+        if (parts.length === 3) {
+          formattedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
         }
+      }
 
-        const { error: updateErr } = await supabase
-          .from('profiles')
-          .update({ gender, birth_date: formattedDate })
-          .eq('id', user.id);
-
-        if (updateErr) throw updateErr;
+      try {
+        await api.account.completeOnboarding({ gender, birth_date: formattedDate });
+      } catch (_) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { error: updateErr } = await supabase
+            .from('profiles')
+            .update({ gender, birth_date: formattedDate })
+            .eq('id', user.id);
+          if (updateErr) throw updateErr;
+        }
       }
       setRequiresOnboarding(false);
       router.replace('/(tabs)/feed' as any);
@@ -300,7 +308,7 @@ export default function LoginAuthScreen() {
     setLoading(true);
     try {
       if (authMode === 'login') {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         router.replace('/(tabs)/feed' as any);
       } else if (authMode === 'register') {
@@ -314,8 +322,6 @@ export default function LoginAuthScreen() {
         if (error) throw error;
         if (data.user) {
           setCurrentUserId(data.user.id);
-          // Supabase natively sends the email if Email Confirmations are enabled in the Dashboard.
-          // We will no longer call the mock sendOtpEmail.
           setEmailOtpModalVisible(true);
         }
       }
@@ -326,7 +332,7 @@ export default function LoginAuthScreen() {
     }
   };
 
-  // Password Recovery Logic
+  // Password Recovery Logic (Supabase Auth real)
   const handleRequestPasswordReset = async () => {
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -339,11 +345,9 @@ export default function LoginAuthScreen() {
 
     setLoading(true);
     try {
-      const res = await sendPasswordResetEmail(targetEmail);
-      if (res.resetCode) {
-        setGeneratedResetCode(res.resetCode);
-      }
-      setSuccessMessage(`Código enviado a ${targetEmail}. Ingrésalo a continuación.`);
+      const { error } = await supabase.auth.resetPasswordForEmail(targetEmail);
+      if (error) throw error;
+      setSuccessMessage(`Código de recuperación enviado a ${targetEmail}. Ingrésalo a continuación.`);
       setForgotStep('update');
     } catch (e: any) {
       setErrorMessage(e.message || 'Error al solicitar restablecimiento.');
@@ -357,12 +361,7 @@ export default function LoginAuthScreen() {
     setSuccessMessage(null);
 
     if (!inputResetCode.trim()) {
-      setErrorMessage('Ingresa el código de 6 dígitos enviado a tu correo.');
-      return;
-    }
-
-    if (inputResetCode.trim() !== generatedResetCode && inputResetCode.trim() !== '654321') {
-      setErrorMessage('El código ingresado es incorrecto.');
+      setErrorMessage('Ingresa el código de verificación enviado a tu correo.');
       return;
     }
 
@@ -374,13 +373,23 @@ export default function LoginAuthScreen() {
     setLoading(true);
     try {
       const targetEmail = resetEmail.trim() || email.trim();
-      try {
-        await supabase.auth.resetPasswordForEmail(targetEmail);
-      } catch (_) {}
 
-      try {
-        await sendPasswordChangedEmail(targetEmail);
-      } catch (_) {}
+      const { error: otpError } = await supabase.auth.verifyOtp({
+        email: targetEmail,
+        token: inputResetCode.trim(),
+        type: 'recovery',
+      });
+      if (otpError) throw otpError;
+
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (updateError) throw updateError;
+
+      await api.notifications.sendEmail({
+        type: 'password_changed',
+        to: targetEmail,
+      }).catch(() => {});
 
       setAlertConfig({
         visible: true,
@@ -397,25 +406,22 @@ export default function LoginAuthScreen() {
         }
       });
     } catch (e: any) {
-      setErrorMessage(e.message || 'Error actualizando contraseña.');
+      setErrorMessage(e.message || 'Código inválido o error actualizando contraseña.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleVerifyEmailOtpCode = async () => {
-    // Si el usuario usa 123456, lo dejamos pasar por motivos de test local
-    if (emailOtpCode === '123456') {
-       setEmailOtpModalVisible(false);
-       if (!cameraPermission?.granted) await requestCameraPermission();
-       setLivenessModalVisible(true);
-       return;
+    if (!emailOtpCode.trim()) {
+      setAlertConfig({ visible: true, title: "Error OTP", message: 'Ingresa el código recibido por correo.', type: 'danger', confirmText: 'OK', onConfirm: () => setAlertConfig(null) });
+      return;
     }
 
     try {
       const { error } = await supabase.auth.verifyOtp({
         email,
-        token: emailOtpCode,
+        token: emailOtpCode.trim(),
         type: 'signup'
       });
       if (error) throw error;
@@ -424,18 +430,18 @@ export default function LoginAuthScreen() {
       if (!cameraPermission?.granted) await requestCameraPermission();
       setLivenessModalVisible(true);
     } catch (e: any) {
-      setAlertConfig({ visible: true, title: "Error OTP", message: e.message || 'Código incorrecto.', type: 'danger', confirmText: 'OK', onConfirm: () => setAlertConfig(null) });
+      setAlertConfig({ visible: true, title: "Error OTP", message: e.message || 'Código incorrecto o expirado.', type: 'danger', confirmText: 'OK', onConfirm: () => setAlertConfig(null) });
     }
   };
 
   const handleRunLivenessScan = async () => {
     setScanningBiometrics(true);
-    const result = await simulateLivenessScan();
+    const result = await simulateLivenessScan(currentUserId || 'user', gender);
     setScanningBiometrics(false);
     if (result.success) {
       try {
-        if (currentUserId) {
-          await supabase.from('profiles').update({ is_identity_verified: true }).eq('id', currentUserId);
+        if (currentUserId && result.hash) {
+          await api.biometrics.verifyLiveness(currentUserId, result.hash);
         }
       } catch (e) {}
       setLivenessModalVisible(false);
@@ -666,7 +672,7 @@ export default function LoginAuthScreen() {
                         <TextInput
                           value={inputResetCode}
                           onChangeText={setInputResetCode}
-                          placeholder="Código de 6 dígitos (ej: 654321)"
+                          placeholder="Código de verificación de 6 dígitos"
                           placeholderTextColor="#6B7280"
                           keyboardType="number-pad"
                           maxLength={6}
@@ -732,7 +738,7 @@ export default function LoginAuthScreen() {
           <LinearGradient colors={['#1F2937', '#000000']} style={styles.modalCard}>
             <KeyRound size={32} color="#00E5FF" style={{ marginBottom: 12 }} />
             <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 18, marginBottom: 16 }}>Verificación por Correo 📧</Text>
-            <TextInput value={emailOtpCode} onChangeText={setEmailOtpCode} placeholder="123456" keyboardType="number-pad" style={styles.otpInput} />
+            <TextInput value={emailOtpCode} onChangeText={setEmailOtpCode} placeholder="000000" maxLength={6} keyboardType="number-pad" style={styles.otpInput} />
             <TouchableOpacity onPress={handleVerifyEmailOtpCode} style={styles.otpBtn}>
               <Text style={{ color: '#000', fontWeight: '900', fontSize: 13 }}>Validar Código</Text>
             </TouchableOpacity>

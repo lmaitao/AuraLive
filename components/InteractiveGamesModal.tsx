@@ -7,6 +7,7 @@ import { X, Gamepad2, Trophy, Zap, RefreshCw } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { zegoService } from '../lib/ZegoService';
 import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 type GameType = null | 'roulette' | 'dice' | 'slots';
@@ -16,40 +17,17 @@ interface GameResult {
   game: string;
   result: string;
   prize: number;
+  newBalance?: number;
   emoji: string;
   timestamp: number;
 }
 
 // ─── RULETA ───────────────────────────────────────────────────────────────────
 const ROULETTE_COLORS = ['Rojo', 'Negro', 'Verde'];
-const ROULETTE_NUMBERS = Array.from({ length: 37 }, (_, i) => i);
 const ROULETTE_EMOJIS: Record<string, string> = { Rojo: '🔴', Negro: '⚫', Verde: '💚' };
-const ROULETTE_MULTIPLIERS: Record<string, number> = { Rojo: 2, Negro: 2, Verde: 14 };
 
 // ─── DADOS ────────────────────────────────────────────────────────────────────
 const DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
-
-function spinRoulette(): { number: number; color: string } {
-  const n = Math.floor(Math.random() * 37);
-  let color = 'Verde';
-  if (n !== 0) {
-    const redNumbers = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
-    color = redNumbers.includes(n) ? 'Rojo' : 'Negro';
-  }
-  return { number: n, color };
-}
-
-function rollDice(): number[] {
-  return [Math.ceil(Math.random() * 6), Math.ceil(Math.random() * 6)];
-}
-
-function spinSlots(): string[] {
-  return [
-    SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
-    SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
-    SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
-  ];
-}
 
 // ─── COMPONENTE RULETA ────────────────────────────────────────────────────────
 function RouletteGame({
@@ -63,41 +41,43 @@ function RouletteGame({
   const spin = async () => {
     if (!betColor || spinning || bet > userCoins) return;
     setSpinning(true);
-    Animated.timing(spinAnim, {
-      toValue: 1, duration: 2000,
-      easing: Easing.out(Easing.cubic), useNativeDriver: true
-    }).start(async () => {
-      const r = spinRoulette();
-      setResult(r);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setSpinning(false);
+        return;
+      }
+      const res = await api.games.playGame(user.id, 'roulette', bet, betColor);
+      Animated.timing(spinAnim, {
+        toValue: 1, duration: 2000,
+        easing: Easing.out(Easing.cubic), useNativeDriver: true
+      }).start(async () => {
+        const r = {
+          number: res.outcome?.number ?? 0,
+          color: res.outcome?.color ?? 'Verde',
+        };
+        setResult(r);
+        setSpinning(false);
+        const gr: GameResult = {
+          playerName: 'Tú',
+          game: 'Ruleta 🎡',
+          result: `${r.number} • ${ROULETTE_EMOJIS[r.color] || '🟢'} ${r.color}`,
+          prize: res.prize,
+          newBalance: res.new_balance,
+          emoji: res.won ? '🎉' : '💀',
+          timestamp: Date.now()
+        };
+        onResult(gr);
+        try {
+          await zegoService.engine?.sendBroadcastMessage(
+            'game-room',
+            JSON.stringify({ type: 'GAME_RESULT', data: gr })
+          );
+        } catch (_) {}
+      });
+    } catch (_) {
       setSpinning(false);
-      const won = r.color === betColor;
-      const prize = won ? bet * ROULETTE_MULTIPLIERS[betColor!] : 0;
-      const gr: GameResult = {
-        playerName: 'Tú',
-        game: 'Ruleta 🎡',
-        result: `${r.number} • ${ROULETTE_EMOJIS[r.color]} ${r.color}`,
-        prize, emoji: won ? '🎉' : '💀',
-        timestamp: Date.now()
-      };
-      onResult(gr);
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await supabase.from('wallets').update({
-            coin_balance: won
-              ? supabase.rpc('increment', { x: prize - bet })
-              : supabase.rpc('decrement', { x: bet })
-          }).eq('user_id', user.id);
-        }
-      } catch (_) {}
-      // Broadcast via Zego
-      try {
-        await zegoService.engine?.sendBroadcastMessage(
-          'game-room',
-          JSON.stringify({ type: 'GAME_RESULT', data: gr })
-        );
-      } catch (_) {}
-    });
+    }
   };
 
   const rotation = spinAnim.interpolate({
@@ -152,39 +132,50 @@ function DiceGame({
 }: { onResult: (r: GameResult) => void; bet: number; userCoins: number }) {
   const [rolling, setRolling] = useState(false);
   const [dice, setDice] = useState<number[]>([1, 1]);
-  const [guess, setGuess] = useState<'alto' | 'bajo' | null>(null); // >7 or <=7
+  const [guess, setGuess] = useState<'alto' | 'bajo' | null>(null);
   const rollAnim = [new Animated.Value(0), new Animated.Value(0)];
 
   const roll = async () => {
     if (!guess || rolling || bet > userCoins) return;
     setRolling(true);
-    Animated.parallel(rollAnim.map(a =>
-      Animated.sequence([
-        Animated.timing(a, { toValue: 1, duration: 150, useNativeDriver: true }),
-        Animated.timing(a, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(a, { toValue: 1, duration: 150, useNativeDriver: true }),
-        Animated.timing(a, { toValue: 0, duration: 150, useNativeDriver: true }),
-      ])
-    )).start(async () => {
-      const result = rollDice();
-      setDice(result);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setRolling(false);
+        return;
+      }
+      const res = await api.games.playGame(user.id, 'dice', bet, guess);
+      Animated.parallel(rollAnim.map(a =>
+        Animated.sequence([
+          Animated.timing(a, { toValue: 1, duration: 150, useNativeDriver: true }),
+          Animated.timing(a, { toValue: 0, duration: 150, useNativeDriver: true }),
+          Animated.timing(a, { toValue: 1, duration: 150, useNativeDriver: true }),
+          Animated.timing(a, { toValue: 0, duration: 150, useNativeDriver: true }),
+        ])
+      )).start(async () => {
+        const d1 = res.outcome?.dice1 ?? 1;
+        const d2 = res.outcome?.dice2 ?? 1;
+        const total = res.outcome?.total ?? (d1 + d2);
+        setDice([d1, d2]);
+        setRolling(false);
+        const gr: GameResult = {
+          playerName: 'Tú',
+          game: 'Dados 🎲',
+          result: `${DICE_FACES[d1 - 1]}${DICE_FACES[d2 - 1]} = ${total}`,
+          prize: res.prize,
+          newBalance: res.new_balance,
+          emoji: res.won ? '🎉' : '💀',
+          timestamp: Date.now()
+        };
+        onResult(gr);
+        try {
+          await zegoService.engine?.sendBroadcastMessage('game-room',
+            JSON.stringify({ type: 'GAME_RESULT', data: gr }));
+        } catch (_) {}
+      });
+    } catch (_) {
       setRolling(false);
-      const total = result[0] + result[1];
-      const won = (guess === 'alto' && total > 7) || (guess === 'bajo' && total <= 7);
-      const prize = won ? bet * 2 : 0;
-      const gr: GameResult = {
-        playerName: 'Tú',
-        game: 'Dados 🎲',
-        result: `${DICE_FACES[result[0] - 1]}${DICE_FACES[result[1] - 1]} = ${total}`,
-        prize, emoji: won ? '🎉' : '💀',
-        timestamp: Date.now()
-      };
-      onResult(gr);
-      try {
-        await zegoService.engine?.sendBroadcastMessage('game-room',
-          JSON.stringify({ type: 'GAME_RESULT', data: gr }));
-      } catch (_) {}
-    });
+    }
   };
 
   return (
@@ -228,14 +219,6 @@ function DiceGame({
 
 // ─── TRAGAMONEDAS CASINO 777 ──────────────────────────────────────────────────
 const SLOT_SYMBOLS = ['7️⃣', '💎', '⭐', '🔔', '🍒', '🍋'];
-const SLOT_JACKPOTS: Record<string, number> = {
-  '7️⃣': 100, // TRIPLE 7 JACKPOT x100
-  '💎': 50,  // DIAMOND ROYALE x50
-  '⭐': 25,  // SUPER STAR x25
-  '🔔': 10,  // GOLDEN BELL x10
-  '🍒': 5,   // FRUIT PAIR x5
-  '🍋': 3,   // LEMON DROP x3
-};
 
 function SlotsGame({
   onResult, bet, userCoins
@@ -248,77 +231,64 @@ function SlotsGame({
     if (spinning || bet > userCoins) return;
     setSpinning(true);
     setWinMessage(null);
-    let ticks = 0;
-    
-    // Descuenta la apuesta inicial en la BD
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from('wallets').update({
-          coin_balance: Math.max(0, userCoins - bet)
-        }).eq('user_id', user.id);
-      }
-    } catch (_) {}
-
-    const id = setInterval(() => {
-      setReels([
-        SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
-        SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
-        SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
-      ]);
-      ticks++;
-      if (ticks >= 24) {
-        clearInterval(id);
-        const final = spinSlots();
-        setReels(final);
+      if (!user) {
         setSpinning(false);
-        
-        const isTripleJackpot = final[0] === final[1] && final[1] === final[2];
-        const isPair = final[0] === final[1] || final[1] === final[2] || final[0] === final[2];
-        
-        let multiplier = 0;
-        let msg = '';
-        
-        if (isTripleJackpot) {
-          multiplier = SLOT_JACKPOTS[final[0]] || 25;
-          msg = `🔥 ¡MEGA JACKPOT TRIPLE ${final[0]}! Ganaste x${multiplier} (${bet * multiplier} 🪙) 🔥`;
-        } else if (isPair) {
-          multiplier = 3;
-          msg = `🎉 ¡PAR GANADOR! Ganaste x${multiplier} (${bet * multiplier} 🪙)`;
-        } else {
-          msg = `💀 Sigue intentando`;
-        }
-
-        const prize = bet * multiplier;
-        setWinMessage(msg);
-
-        const gr: GameResult = {
-          playerName: 'Tú',
-          game: 'Tragaperras 777 🎰',
-          result: `${final.join(' | ')}`,
-          prize,
-          emoji: prize > 0 ? '🎰' : '💀',
-          timestamp: Date.now()
-        };
-        onResult(gr);
-
-        // Acredita el premio ganado en Supabase
-        if (prize > 0) {
-          supabase.auth.getUser().then(({ data: { user } }) => {
-            if (user) {
-              supabase.from('wallets').update({
-                coin_balance: userCoins - bet + prize
-              }).eq('user_id', user.id).then(() => {});
-            }
-          });
-        }
-
-        try {
-          zegoService.engine?.sendBroadcastMessage('game-room',
-            JSON.stringify({ type: 'GAME_RESULT', data: gr }));
-        } catch (_) {}
+        return;
       }
-    }, 70);
+
+      const res = await api.games.playGame(user.id, 'slots', bet);
+      let ticks = 0;
+
+      const id = setInterval(() => {
+        setReels([
+          SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
+          SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
+          SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)],
+        ]);
+        ticks++;
+        if (ticks >= 24) {
+          clearInterval(id);
+          const final: string[] = res.outcome?.reels || ['7️⃣', '💎', '🍒'];
+          setReels(final);
+          setSpinning(false);
+
+          const isTripleJackpot = final[0] === final[1] && final[1] === final[2];
+          const isPair = final[0] === final[1] || final[1] === final[2] || final[0] === final[2];
+
+          let msg = '';
+          if (isTripleJackpot && res.prize > 0) {
+            msg = `🔥 ¡MEGA JACKPOT TRIPLE ${final[0]}! Ganaste x${res.multiplier} (${res.prize} 🪙) 🔥`;
+          } else if (isPair && res.prize > 0) {
+            msg = `🎉 ¡PAR GANADOR! Ganaste x${res.multiplier} (${res.prize} 🪙)`;
+          } else {
+            msg = `💀 Sigue intentando`;
+          }
+
+          setWinMessage(msg);
+
+          const gr: GameResult = {
+            playerName: 'Tú',
+            game: 'Tragaperras 777 🎰',
+            result: `${final.join(' | ')}`,
+            prize: res.prize,
+            newBalance: res.new_balance,
+            emoji: res.prize > 0 ? '🎰' : '💀',
+            timestamp: Date.now()
+          };
+          onResult(gr);
+
+          try {
+            zegoService.engine?.sendBroadcastMessage('game-room',
+              JSON.stringify({ type: 'GAME_RESULT', data: gr }));
+          } catch (_) {}
+        }
+      }, 70);
+    } catch (_) {
+      setSpinning(false);
+    }
   };
 
   return (
@@ -390,29 +360,12 @@ export function InteractiveGamesModal({
     } catch (_) {}
   };
 
-  const handleResult = useCallback(async (r: GameResult) => {
+  const handleResult = useCallback((r: GameResult) => {
     setResults(prev => [r, ...prev].slice(0, 5));
-    if (r.prize > 0) {
-      // Actualizar billetera al ganar
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        await supabase.from('wallets')
-          .update({ coin_balance: userCoins - bet + r.prize })
-          .eq('user_id', user.id);
-        setUserCoins(prev => prev - bet + r.prize);
-      } catch (_) {}
-    } else {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        await supabase.from('wallets')
-          .update({ coin_balance: Math.max(0, userCoins - bet) })
-          .eq('user_id', user.id);
-        setUserCoins(prev => Math.max(0, prev - bet));
-      } catch (_) {}
+    if (typeof r.newBalance === 'number') {
+      setUserCoins(r.newBalance);
     }
-  }, [bet, userCoins]);
+  }, []);
 
   const GAME_MENU = [
     { id: 'roulette', name: 'Ruleta Cyber 🎡', desc: 'Rojo / Negro / Verde', colors: ['#EF4444', '#991B1B'] as const },

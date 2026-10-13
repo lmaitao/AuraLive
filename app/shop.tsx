@@ -1,46 +1,37 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, StyleSheet } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, withSpring } from 'react-native-reanimated';
+import { View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator, StyleSheet, Platform } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { useTheme } from '../hooks/useTheme';
 import { supabase } from '../lib/supabase';
-import { Coins, ArrowLeft, CreditCard, Sparkles, ShieldCheck, CheckCircle2, Wallet, DollarSign } from 'lucide-react-native';
+import { api, CoinPackageCatalogItem, FALLBACK_COIN_PACKAGES } from '../lib/api';
+import { Coins, ArrowLeft } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Cyber3DBackground } from '../components/Cyber3DBackground';
 
-export interface CoinPackage {
-  id: string;
-  coins: number;
-  bonusCoins: number;
-  usdPrice: number;
-  popular?: boolean;
-  isMax?: boolean;
-}
-
-const PACKAGES: CoinPackage[] = [
-  { id: 'pkg-5usd',   coins: 5000,   bonusCoins: 250,   usdPrice: 5 },
-  { id: 'pkg-10usd',  coins: 10000,  bonusCoins: 1000,  usdPrice: 10 },
-  { id: 'pkg-20usd',  coins: 20000,  bonusCoins: 3000,  usdPrice: 20, popular: true },
-  { id: 'pkg-50usd',  coins: 50000,  bonusCoins: 10000, usdPrice: 50 },
-  { id: 'pkg-100usd', coins: 100000, bonusCoins: 25000, usdPrice: 100, popular: true },
-  { id: 'pkg-200usd', coins: 200000, bonusCoins: 60000, usdPrice: 200, isMax: true },
-];
+export type CoinPackage = CoinPackageCatalogItem;
 
 export default function ShopScreen() {
   const theme = useTheme();
   const router = useRouter();
 
-  const [selectedGateway, setSelectedGateway] = useState<'paypal' | 'binance' | 'google_play' | 'stripe'>('paypal');
-  const [selectedPkg, setSelectedPkg] = useState<CoinPackage>(PACKAGES[0]);
+  const [packages, setPackages] = useState<CoinPackage[]>(FALLBACK_COIN_PACKAGES);
+  const [selectedGateway, setSelectedGateway] = useState<'stripe' | 'google_play'>(
+    Platform.OS === 'android' ? 'google_play' : 'stripe'
+  );
+  const [selectedPkg, setSelectedPkg] = useState<CoinPackage>(FALLBACK_COIN_PACKAGES[0]);
   const [loading, setLoading] = useState(false);
   const [currentBalance, setCurrentBalance] = useState(0);
+  const [currentAuras, setCurrentAuras] = useState(0);
 
   const coinPulse = useSharedValue(1);
   const auraScale = useSharedValue(1);
 
   useEffect(() => {
-    loadBalance();
+    loadShopData();
     coinPulse.value = withRepeat(
       withTiming(1.2, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
       -1,
@@ -53,12 +44,23 @@ export default function ShopScreen() {
     );
   }, []);
 
-  const loadBalance = async () => {
+  const loadShopData = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data: wallet } = await supabase.from('wallets').select('coin_balance').eq('user_id', user.id).single();
-      if (wallet) setCurrentBalance(wallet.coin_balance);
+      const [catalog, { data: { user } }] = await Promise.all([
+        api.catalogs.getCoinPackages(),
+        supabase.auth.getUser(),
+      ]);
+
+      if (catalog.length > 0) {
+        setPackages(catalog);
+        setSelectedPkg(catalog[0]);
+      }
+
+      if (user) {
+        const wallet = await api.wallet.getBalance(user.id);
+        setCurrentBalance(wallet.coinBalance);
+        setCurrentAuras(wallet.auraBalance);
+      }
     } catch (_) {}
   };
 
@@ -74,38 +76,108 @@ export default function ShopScreen() {
     setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const totalCoins = selectedPkg.coins + selectedPkg.bonusCoins;
-
-      if (user) {
-        // 1. Acreditar monedas a la billetera real
-        const { data: wallet } = await supabase.from('wallets').select('coin_balance').eq('user_id', user.id).single();
-        const currentBal = wallet?.coin_balance || 0;
-        const newBal = currentBal + totalCoins;
-
-        await supabase.from('wallets').update({ coin_balance: newBal }).eq('user_id', user.id);
-        
-        // 2. Marcar que ha realizado recarga (remueve la insignia NUEVO de su perfil)
-        await supabase.from('profiles').update({ has_recharged: true }).eq('id', user.id);
-
-        setCurrentBalance(newBal);
-      } else {
-        setCurrentBalance(prev => prev + totalCoins);
+      if (!user) {
+        Alert.alert('Sesión Requerida', 'Debes iniciar sesión para realizar una recarga de monedas.', [
+          { text: 'Iniciar Sesión', onPress: () => router.push('/auth/login' as any) },
+          { text: 'Cancelar', style: 'cancel' },
+        ]);
+        return;
       }
 
-      const gatewayLabel = 
-        selectedGateway === 'paypal' ? 'PayPal Instant' :
-        selectedGateway === 'binance' ? 'Binance Pay' :
-        selectedGateway === 'google_play' ? 'Google / Apple Pay' : 'Stripe Tarjetas';
+      if (selectedGateway === 'stripe') {
+        const returnUrl = Linking.createURL('/shop');
+        const res = await api.payments.createStripeCheckout(
+          selectedPkg.id,
+          `${returnUrl}?status=success`,
+          `${returnUrl}?status=cancelled`
+        );
 
-      Alert.alert(
-        '¡Recarga Exitosa! 🎉',
-        `Se han acreditado +${totalCoins.toLocaleString()} Monedas a tu cuenta mediante ${gatewayLabel}.`
-      );
+        if (!res.checkout_url) {
+          throw new Error('No se recibió URL de pago desde Stripe.');
+        }
+
+        await WebBrowser.openBrowserAsync(res.checkout_url);
+        // Al regresar del navegador, consultar el saldo actualizado por el webhook de Stripe
+        const updatedWallet = await api.wallet.getBalance(user.id);
+        setCurrentBalance(updatedWallet.coinBalance);
+        setCurrentAuras(updatedWallet.auraBalance);
+        return;
+      }
+
+      if (selectedGateway === 'google_play') {
+        if (Platform.OS !== 'android') {
+          Alert.alert(
+            'Google Play Billing',
+            'Las compras integradas de Google Play solo están disponibles en dispositivos Android. Usa Tarjetas (Stripe) en esta plataforma.'
+          );
+          return;
+        }
+
+        const sku = selectedPkg.googlePlayProductId || `com.auralive.coins.${selectedPkg.usdPrice}usd`;
+        const ExpoIap: any = await import('expo-iap');
+        await ExpoIap.initConnection();
+
+        const purchaseResult = await ExpoIap.requestPurchase({
+          request: {
+            android: { skus: [sku] },
+          },
+          type: 'in-app',
+        });
+
+        const purchase = Array.isArray(purchaseResult) ? purchaseResult[0] : purchaseResult;
+        const purchaseToken = purchase?.purchaseToken || purchase?.transactionReceipt;
+
+        if (!purchaseToken) {
+          throw new Error('No se obtuvo el token de compra de Google Play.');
+        }
+
+        const verifyRes = await api.payments.verifyGooglePlay({
+          packageId: selectedPkg.id,
+          productId: sku,
+          purchaseToken,
+        });
+
+        try {
+          await ExpoIap.finishTransaction({ purchase, isConsumable: true });
+        } catch (_) {}
+
+        setCurrentBalance(verifyRes.new_balance);
+        Alert.alert(
+          '¡Recarga Verificada! 🎉',
+          `Se han acreditado +${verifyRes.coins_credited.toLocaleString()} Monedas a tu billetera.`
+        );
+      }
     } catch (err: any) {
-      Alert.alert('Error de Pago', err.message || 'Fallo de conexión.');
+      Alert.alert('Error de Pago', err.message || 'No se pudo procesar el pago.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleExchangeFiveAuras = () => {
+    Alert.alert(
+      'Intercambio de Auras 🔮➡️🪙',
+      `Tienes ${currentAuras.toLocaleString()} Auras disponibles.\n¿Deseas canjear 5 Auras por +500 Monedas inmediatamente?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Canjear 5 Auras (+500 🪙)',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              const res = await api.wallet.exchangeAurasForCoins(5);
+              setCurrentBalance(res.new_coin_balance);
+              setCurrentAuras(res.new_aura_balance);
+              Alert.alert('¡Canje Exitoso! 🔮➡️🪙', 'Has convertido 5 Auras en +500 Monedas.');
+            } catch (e: any) {
+              Alert.alert('No se pudo canjear', e.message || 'Saldo insuficiente de Auras.');
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -131,54 +203,9 @@ export default function ShopScreen() {
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
         {/* Payment Methods Section */}
-        <Text style={styles.sectionTitle}>1. Medio de Pago Seguro</Text>
+        <Text style={styles.sectionTitle}>1. Medio de Pago Oficial Verificado</Text>
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
-          {/* PayPal */}
-          <TouchableOpacity
-            onPress={() => setSelectedGateway('paypal')}
-            activeOpacity={0.85}
-            style={{ width: '48%' }}
-          >
-            <LinearGradient
-              colors={selectedGateway === 'paypal' ? ['#00457C', '#0079C1'] : ['#1F2937', '#111827']}
-              style={[styles.gatewayCard, { borderColor: selectedGateway === 'paypal' ? '#0079C1' : 'rgba(255,255,255,0.1)' }]}
-            >
-              <Text style={{ color: '#00E5FF', fontWeight: '900', fontSize: 13 }}>PayPal 💙</Text>
-              <Text style={{ color: '#9CA3AF', fontSize: 9, marginTop: 2 }}>Pago seguro instantáneo</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          {/* Binance Pay */}
-          <TouchableOpacity
-            onPress={() => setSelectedGateway('binance')}
-            activeOpacity={0.85}
-            style={{ width: '48%' }}
-          >
-            <LinearGradient
-              colors={selectedGateway === 'binance' ? ['#78350F', '#B45309'] : ['#1F2937', '#111827']}
-              style={[styles.gatewayCard, { borderColor: selectedGateway === 'binance' ? '#F59E0B' : 'rgba(255,255,255,0.1)' }]}
-            >
-              <Text style={{ color: '#FFD700', fontWeight: '900', fontSize: 13 }}>Binance Pay 🟡</Text>
-              <Text style={{ color: '#9CA3AF', fontSize: 9, marginTop: 2 }}>Criptomonedas USDT</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          {/* Google / Apple Pay */}
-          <TouchableOpacity
-            onPress={() => setSelectedGateway('google_play')}
-            activeOpacity={0.85}
-            style={{ width: '48%' }}
-          >
-            <LinearGradient
-              colors={selectedGateway === 'google_play' ? ['#064E3B', '#047857'] : ['#1F2937', '#111827']}
-              style={[styles.gatewayCard, { borderColor: selectedGateway === 'google_play' ? '#10B981' : 'rgba(255,255,255,0.1)' }]}
-            >
-              <Text style={{ color: '#34D399', fontWeight: '900', fontSize: 13 }}>Google / Apple Pay 🟢</Text>
-              <Text style={{ color: '#9CA3AF', fontSize: 9, marginTop: 2 }}>In-App Purchases</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
           {/* Stripe / Credit Card */}
           <TouchableOpacity
             onPress={() => setSelectedGateway('stripe')}
@@ -189,8 +216,23 @@ export default function ShopScreen() {
               colors={selectedGateway === 'stripe' ? ['#831843', '#BE185D'] : ['#1F2937', '#111827']}
               style={[styles.gatewayCard, { borderColor: selectedGateway === 'stripe' ? '#FF007F' : 'rgba(255,255,255,0.1)' }]}
             >
-              <Text style={{ color: '#FF007F', fontWeight: '900', fontSize: 13 }}>Tarjetas 💳</Text>
-              <Text style={{ color: '#9CA3AF', fontSize: 9, marginTop: 2 }}>Visa / Mastercard</Text>
+              <Text style={{ color: '#FF007F', fontWeight: '900', fontSize: 13 }}>Stripe Tarjetas 💳</Text>
+              <Text style={{ color: '#9CA3AF', fontSize: 9, marginTop: 2 }}>Visa / Mastercard / Apple Pay</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          {/* Google Play Billing */}
+          <TouchableOpacity
+            onPress={() => setSelectedGateway('google_play')}
+            activeOpacity={0.85}
+            style={{ width: '48%' }}
+          >
+            <LinearGradient
+              colors={selectedGateway === 'google_play' ? ['#064E3B', '#047857'] : ['#1F2937', '#111827']}
+              style={[styles.gatewayCard, { borderColor: selectedGateway === 'google_play' ? '#10B981' : 'rgba(255,255,255,0.1)' }]}
+            >
+              <Text style={{ color: '#34D399', fontWeight: '900', fontSize: 13 }}>Google Play 🟢</Text>
+              <Text style={{ color: '#9CA3AF', fontSize: 9, marginTop: 2 }}>In-App Purchases Oficial</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -199,7 +241,7 @@ export default function ShopScreen() {
         <Text style={styles.sectionTitle}>2. Paquete de Monedas AURA</Text>
 
         <View style={{ gap: 12, marginBottom: 24 }}>
-          {PACKAGES.map((pkg) => {
+          {packages.map((pkg) => {
             const isSelected = selectedPkg.id === pkg.id;
             return (
               <TouchableOpacity
@@ -249,22 +291,7 @@ export default function ShopScreen() {
 
         {/* Canje de Auras por Monedas Banner */}
         <TouchableOpacity
-          onPress={() => {
-            Alert.alert(
-              'Intercambio de Auras 🔮➡️🪙',
-              'Canjea 5 Auras por +500 Monedas inmediatamente.',
-              [
-                { text: 'Cancelar', style: 'cancel' },
-                {
-                  text: 'Canjear 5 Auras (+500 🪙)',
-                  onPress: () => {
-                    setCurrentBalance((prev) => prev + 500);
-                    Alert.alert('¡Canje Exitoso! 🔮➡️🪙', 'Has convertido 5 Auras en +500 Monedas.');
-                  },
-                },
-              ]
-            );
-          }}
+          onPress={handleExchangeFiveAuras}
           activeOpacity={0.85}
           style={{ marginBottom: 20 }}
         >
@@ -275,7 +302,7 @@ export default function ShopScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Animated.Text style={[{ fontSize: 24 }, animatedAuraStyle]}>🔮</Animated.Text>
               <View>
-                <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 13 }}>¿Tienes Auras Acumuladas?</Text>
+                <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 13 }}>¿Tienes Auras Acumuladas? ({currentAuras} 🔮)</Text>
                 <Text style={{ color: '#C084FC', fontSize: 10 }}>Intercámbialas por Monedas (1 Aura = 100 🪙)</Text>
               </View>
             </View>
@@ -311,7 +338,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#0D1117',
@@ -381,13 +408,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FFD700',
     alignItems: 'center',
-    justify: 'center',
+    justifyContent: 'center',
   },
   checkoutBtn: {
     paddingVertical: 16,
     borderRadius: 28,
     alignItems: 'center',
-    justify: 'center',
+    justifyContent: 'center',
   },
   checkoutBtnText: {
     color: '#000000',

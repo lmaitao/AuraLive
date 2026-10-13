@@ -9,6 +9,7 @@ import { Cyber3DBackground } from '../../components/Cyber3DBackground';
 import { Video as ExpoVideo, ResizeMode } from 'expo-av';
 import { useIsFocused } from '@react-navigation/native';
 import { supabase } from '../../lib/supabase';
+import { api } from '../../lib/api';
 
 export interface ReelComment {
   id: string;
@@ -145,7 +146,10 @@ export default function ShortVideosScreen() {
     );
 
     try {
-      await supabase.from('reels').update({ likes_count: nextLikesCount }).eq('id', id);
+      const res = await api.likes.toggleReelLike(id);
+      setReels((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, isLiked: res.liked, likes: res.likes_count } : r))
+      );
     } catch (e) {
       console.log('Error updating likes in DB:', e);
     }
@@ -159,11 +163,12 @@ export default function ShortVideosScreen() {
   const handleAddComment = async () => {
     if (!newCommentText.trim() || !activeReelId) return;
 
+    const commentContent = newCommentText.trim();
     const newComment: ReelComment = {
       id: `comment-${Date.now()}`,
       userName: currentUser?.full_name || 'Usuario Aura',
       userAvatar: currentUser?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
-      text: newCommentText.trim(),
+      text: commentContent,
       timestamp: 'Ahora mismo',
     };
 
@@ -185,7 +190,7 @@ export default function ShortVideosScreen() {
     setNewCommentText('');
 
     try {
-      await supabase.from('reels').update({ comments_count: nextCommentsCount }).eq('id', activeReelId);
+      await api.likes.addReelComment(activeReelId, commentContent);
     } catch (e) {
       console.log('Error updating comments in DB:', e);
     }

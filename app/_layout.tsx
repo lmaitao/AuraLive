@@ -64,7 +64,7 @@ export default function RootLayout() {
   }, [pathname]);
 
   return (
-    <View style={{ flex: 1, minHeight: Platform.OS === 'web' ? '100vh' : '100%', backgroundColor: theme.bg }}>
+    <View style={{ flex: 1, minHeight: (Platform.OS === 'web' ? '100vh' : '100%') as any, backgroundColor: theme.bg }}>
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       <AuraLaunchSplash />
       <Stack

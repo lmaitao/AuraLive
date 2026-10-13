@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
   gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justify: 'space-between',
+    justifyContent: 'space-between',
     width: '100%',
   },
   gradientBorder: {
